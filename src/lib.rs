@@ -19,8 +19,10 @@ pub const EF_CONSTRUCTION: usize = 400;
 
 /// The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds.
 pub const EF: usize = 24;
+
 /// The number of bi-directional links created for each node in the HNSW graph.
 pub const M: usize = 12;
+
 /// The number of bi-directional links created for each node in the HNSW graph in the first layer.
 pub const M0: usize = 24;
 

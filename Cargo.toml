@@ -1,5 +1,10 @@
 [package]
 name = "text-db"
+authors = ["Emil Sayahi <sayahie@miamioh.edu>", "Steven Alexander Chiacchira <chiaccsa@miamioh.edu>"]
+description = "A vector database for querying semantically similar text."
+repository = "https://github.com/emmyoh/text-db/"
+license = "AGPL-3.0-or-later"
+readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 
