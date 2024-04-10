@@ -5,7 +5,7 @@ use pcg_rand::Pcg32;
 use serde::Deserialize;
 use serde::Serialize;
 use simsimd::SpatialSimilarity;
-use space::Metric;
+use space::{Metric, Neighbor};
 use std::{error::Error, fs};
 
 /// The path to the database on disk.
@@ -16,6 +16,10 @@ pub const EF_CONSTRUCTION: usize = 400;
 
 /// The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds.
 pub const EF: usize = 24;
+/// The number of bi-directional links created for each node in the HNSW graph.
+pub const M: usize = 12;
+/// The number of bi-directional links created for each node in the HNSW graph in the first layer.
+pub const M0: usize = 24;
 
 /// The data type representing the cosine similarity between two embeddings.
 pub type CosineDistance = u64;
@@ -36,7 +40,7 @@ impl Metric<Embedding> for CosineSimilarity {
 /// A database containing texts and their embeddings.
 pub struct Database {
     /// The Hierarchical Navigable Small World (HNSW) graph containing the embeddings.
-    pub hnsw: Hnsw<CosineSimilarity, Embedding, Pcg32, 12, 24>,
+    pub hnsw: Hnsw<CosineSimilarity, Embedding, Pcg32, M, M0>,
     /// The texts inserted into the database.
     pub texts: Vec<String>,
 }
@@ -117,7 +121,7 @@ pub fn query_texts<S: AsRef<str> + Send + Sync>(
     texts: Vec<S>,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let db = create_or_load_database()?;
-    if db.texts.is_empty() {
+    if db.texts.is_empty() || db.hnsw.is_empty() {
         return Ok(Vec::new());
     }
     let mut searcher: Searcher<CosineDistance> = Searcher::default();
@@ -125,9 +129,16 @@ pub fn query_texts<S: AsRef<str> + Send + Sync>(
     let model = TextEmbedding::try_new(Default::default())?;
     let query_embeddings = model.embed(texts, None)?;
     for query_embedding in query_embeddings.iter() {
-        let mut neighbours = Vec::new();
+        let mut neighbours = [Neighbor {
+            index: !0,
+            distance: !0,
+        }; 1];
         db.hnsw
             .nearest(&query_embedding, EF, &mut searcher, &mut neighbours);
+        neighbours.sort_unstable();
+        if neighbours.is_empty() {
+            return Ok(Vec::new());
+        }
         let nearest_neighbour = neighbours[0];
         results.push(db.texts[nearest_neighbour.index].clone());
     }
