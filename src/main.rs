@@ -26,9 +26,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     let mut buffer = BufWriter::new(stdout().lock());
     match cli.command {
-        Some(Commands::Insert { texts }) => {
+        Some(Commands::Insert { mut texts }) => {
             writeln!(buffer, "Inserting {} text(s).", texts.len())?;
-            let insertion_results = insert_texts(texts)?;
+            let insertion_results = insert_texts(&mut texts)?;
             writeln!(
                 buffer,
                 "{} embeddings of {} dimensions inserted into the database.",
