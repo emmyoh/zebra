@@ -30,7 +30,7 @@ pub const M: usize = 12;
 /// The number of bi-directional links created for each node in the HNSW graph in the first layer. Cannot be changed after database creation.
 pub const M0: usize = 24;
 
-/// The data type representing the cosine distance between two embeddings.
+/// The data type representing the distance between two embeddings.
 pub type DistanceUnit = u64;
 
 /// The data type representing the distance metric for text embeddings.
