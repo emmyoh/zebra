@@ -1,11 +1,14 @@
 use fastembed::{Embedding, TextEmbedding};
 use hnsw::Params;
 use hnsw::{Hnsw, Searcher};
-use pcg_rand::Pcg32;
+use pcg_rand::Pcg64;
 use serde::Deserialize;
 use serde::Serialize;
 use simsimd::SpatialSimilarity;
 use space::{Metric, Neighbor};
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::{self, BufReader, BufWriter};
 use std::{error::Error, fs};
 
 /// The path to the database on disk.
@@ -40,9 +43,56 @@ impl Metric<Embedding> for CosineSimilarity {
 /// A database containing texts and their embeddings.
 pub struct Database {
     /// The Hierarchical Navigable Small World (HNSW) graph containing the embeddings.
-    pub hnsw: Hnsw<CosineSimilarity, Embedding, Pcg32, M, M0>,
-    /// The texts inserted into the database.
-    pub texts: Vec<String>,
+    pub hnsw: Hnsw<CosineSimilarity, Embedding, Pcg64, M, M0>,
+}
+
+/// Save texts to disk.
+///
+/// # Arguments
+///
+/// * `texts` - A map of text indices and their corresponding texts.
+pub fn save_texts_to_disk(texts: &mut HashMap<usize, String>) -> Result<(), Box<dyn Error>> {
+    std::fs::create_dir_all("texts")?;
+    for text in texts {
+        let mut reader = BufReader::new(text.1.as_bytes());
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(format!("texts/{}.lz4", text.0))?;
+        let buf = BufWriter::new(file);
+        let mut compressor = lz4_flex::frame::FrameEncoder::new(buf);
+        io::copy(&mut reader, &mut compressor)?;
+        compressor.finish()?;
+    }
+    Ok(())
+}
+
+/// Read texts from disk.
+///
+/// # Arguments
+///
+/// * `texts` - A vector of text indices to be read.
+///
+/// # Returns
+///
+/// A map of text indices and their corresponding texts.
+pub fn read_texts_from_disk(
+    texts: &mut Vec<usize>,
+) -> Result<HashMap<usize, String>, Box<dyn Error>> {
+    let mut results = HashMap::new();
+    for text_index in texts {
+        let file = OpenOptions::new()
+            .read(true)
+            .open(format!("texts/{}.lz4", text_index))?;
+        let buf = BufReader::new(file);
+        let mut decompressor = lz4_flex::frame::FrameDecoder::new(buf);
+        let mut writer = BufWriter::new(Vec::new());
+        io::copy(&mut decompressor, &mut writer)?;
+        let text = String::from_utf8(writer.into_inner()?)?;
+        results.insert(*text_index, text);
+    }
+    Ok(results)
 }
 
 /// Load the database from disk, or create it if it does not already exist.
@@ -62,10 +112,7 @@ pub fn create_or_load_database() -> Result<Database, Box<dyn Error>> {
                 CosineSimilarity,
                 Params::new().ef_construction(EF_CONSTRUCTION),
             );
-            let db = Database {
-                hnsw,
-                texts: Vec::new(),
-            };
+            let db = Database { hnsw };
             let db_bytes = bincode::serialize(&db)?;
             fs::write(DB_PATH, db_bytes)?;
             Ok(db)
@@ -84,7 +131,7 @@ pub fn save_database(db: Database) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Insert texts into the database.
+/// Insert texts into the database. Inserting too many texts at once may take too much time and memory.
 ///
 /// # Arguments
 ///
@@ -101,8 +148,10 @@ pub fn insert_texts(texts: &mut Vec<String>) -> Result<(usize, usize), Box<dyn E
     let mut db = create_or_load_database()?;
     let mut searcher: Searcher<CosineDistance> = Searcher::default();
     for (text, embedding) in texts.iter().zip(new_embeddings.iter()) {
-        db.hnsw.insert(embedding.clone(), &mut searcher);
-        db.texts.push(text.clone());
+        let embedding_index = db.hnsw.insert(embedding.clone(), &mut searcher);
+        let mut text_map = HashMap::new();
+        text_map.insert(embedding_index, text.clone());
+        save_texts_to_disk(&mut text_map)?;
     }
     save_database(db)?;
     Ok(length_and_dimension)
@@ -121,7 +170,7 @@ pub fn query_texts<S: AsRef<str> + Send + Sync>(
     texts: Vec<S>,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let db = create_or_load_database()?;
-    if db.texts.is_empty() || db.hnsw.is_empty() {
+    if db.hnsw.is_empty() {
         return Ok(Vec::new());
     }
     let mut searcher: Searcher<CosineDistance> = Searcher::default();
@@ -132,15 +181,19 @@ pub fn query_texts<S: AsRef<str> + Send + Sync>(
         let mut neighbours = [Neighbor {
             index: !0,
             distance: !0,
-        }; 1];
+        }; EF];
         db.hnsw
             .nearest(&query_embedding, EF, &mut searcher, &mut neighbours);
-        neighbours.sort_unstable();
         if neighbours.is_empty() {
             return Ok(Vec::new());
         }
+        neighbours.sort_unstable_by_key(|n| n.distance);
         let nearest_neighbour = neighbours[0];
-        results.push(db.texts[nearest_neighbour.index].clone());
+        results.push(nearest_neighbour.index);
     }
-    Ok(results)
+    let texts: Vec<String> = read_texts_from_disk(&mut results)?
+        .values()
+        .cloned()
+        .collect();
+    Ok(texts)
 }
