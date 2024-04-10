@@ -1,12 +1,22 @@
 [package]
 name = "text-db"
-authors = ["Emil Sayahi <sayahie@miamioh.edu>", "Steven Alexander Chiacchira <chiaccsa@miamioh.edu>"]
+authors = ["Emil Sayahi <sayahie@miamioh.edu>"]
 description = "A vector database for querying semantically similar text."
 repository = "https://github.com/emmyoh/text-db/"
 license = "AGPL-3.0-or-later"
 readme = "README.md"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "text_db"
+path = "src/lib.rs"
+crate-type=["rlib", "dylib", "staticlib"]
+
+[[bin]]
+name = "text-db"
+path = "src/main.rs"
+doc = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -23,3 +33,5 @@ space = "0.17"
 lz4_flex = { version = "0.11.3", default-features = false, features = ["frame"] }
 ticky = "1.0.2"
 pretty-duration = "0.1.1"
+indicatif = "0.17.8"
+distances = "1.6.3"

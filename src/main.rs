@@ -1,4 +1,5 @@
 use clap::{command, Parser, Subcommand};
+use indicatif::{ProgressBar, ProgressDrawTarget};
 use pretty_duration::pretty_duration;
 use std::error::Error;
 use std::io::Write;
@@ -30,14 +31,16 @@ enum Commands {
     InsertFromFiles { file_paths: Vec<PathBuf> },
     #[command(about = "Query texts from the database.", arg_required_else_help(true))]
     Query { texts: Vec<String> },
+    #[command(about = "Clear the database.")]
+    Clear,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-    let mut buffer = BufWriter::new(stdout().lock());
     let mut sw = Stopwatch::start_new();
     match cli.command {
         Some(Commands::Insert { mut texts }) => {
+            let mut buffer = BufWriter::new(stdout().lock());
             writeln!(buffer, "Inserting {} text(s).", texts.len())?;
             let insertion_results = insert_texts(&mut texts)?;
             sw.stop();
@@ -51,7 +54,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::InsertFromFiles { file_paths }) => {
             let num_texts = file_paths.len();
-            writeln!(buffer, "Inserting texts from {} file(s).", num_texts)?;
+            // writeln!(buffer, "Inserting texts from {} file(s).", num_texts)?;
+            let progress_bar = ProgressBar::with_draw_target(
+                Some(num_texts.try_into()?),
+                ProgressDrawTarget::hidden(),
+            )
+            .with_message(format!("Inserting texts from {} file(s).", num_texts));
             let mut i = 0;
             let mut texts = Vec::new();
             // Insert texts in batches of INSERT_BATCH_SIZE.
@@ -60,35 +68,37 @@ fn main() -> Result<(), Box<dyn Error>> {
                 texts.push(text);
                 if i == INSERT_BATCH_SIZE - 1 {
                     let insertion_results = insert_texts(&mut texts)?;
-                    writeln!(
-                        buffer,
+                    progress_bar.println(format!(
                         "{} embeddings of {} dimensions inserted into the database.",
                         insertion_results.0, insertion_results.1
-                    )?;
+                    ));
                     texts.clear();
                     i = 0;
                 } else {
                     i = i + 1;
                 }
+                progress_bar.inc(1);
+                if progress_bar.is_hidden() {
+                    progress_bar.set_draw_target(ProgressDrawTarget::stderr_with_hz(100));
+                }
             }
             // Insert the remaining texts, if any.
             if !texts.is_empty() {
                 let insertion_results = insert_texts(&mut texts)?;
-                writeln!(
-                    buffer,
+                progress_bar.println(format!(
                     "{} embeddings of {} dimensions inserted into the database.",
                     insertion_results.0, insertion_results.1
-                )?;
+                ));
             }
             sw.stop();
-            writeln!(
-                buffer,
+            progress_bar.println(format!(
                 "Inserted {} text(s) in {}.",
                 num_texts,
                 pretty_duration(&sw.elapsed(), None)
-            )?;
+            ));
         }
         Some(Commands::Query { texts }) => {
+            let mut buffer = BufWriter::new(stdout().lock());
             let num_texts = texts.len();
             writeln!(buffer, "Querying {} text(s).", num_texts)?;
             let query_results = query_texts(texts)?;
@@ -103,6 +113,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             for result in query_results {
                 writeln!(buffer, "1. \t{}", result)?;
             }
+        }
+        Some(Commands::Clear) => {
+            let mut buffer = BufWriter::new(stdout().lock());
+            writeln!(buffer, "Clearing database.")?;
+            std::fs::remove_file(text_db::DB_PATH).unwrap_or(());
+            std::fs::remove_dir_all("texts").unwrap_or(());
+            std::fs::remove_dir_all(".fastembed_cache").unwrap_or(());
+            sw.stop();
+            writeln!(
+                buffer,
+                "Database cleared in {}.",
+                pretty_duration(&sw.elapsed(), None)
+            )?;
         }
         _ => unreachable!(),
     }
