@@ -14,16 +14,16 @@ use std::{error::Error, fs};
 /// The path to the database on disk.
 pub const DB_PATH: &str = "db";
 
-/// A parameter regarding insertion into the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds.
+/// A parameter regarding insertion into the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Cannot be changed after database creation.
 pub const EF_CONSTRUCTION: usize = 400;
 
-/// The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds.
+/// The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Can be changed after database creation.
 pub const EF: usize = 24;
 
-/// The number of bi-directional links created for each node in the HNSW graph.
+/// The number of bi-directional links created for each node in the HNSW graph. Cannot be changed after database creation. Increases memory usage and decreases retrieval speed with higher values.
 pub const M: usize = 12;
 
-/// The number of bi-directional links created for each node in the HNSW graph in the first layer.
+/// The number of bi-directional links created for each node in the HNSW graph in the first layer. Cannot be changed after database creation.
 pub const M0: usize = 24;
 
 /// The data type representing the cosine similarity between two embeddings.
