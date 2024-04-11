@@ -57,7 +57,7 @@ impl DocumentType {
 ///
 /// * `M0` - The number of bi-directional links created for each node in the HNSW graph in the first layer. Cannot be changed after database creation.
 pub struct Database<
-    Met: Metric<Embedding> + Serialize,
+    Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
     const EF_CONSTRUCTION: usize,
     const M: usize,
     const M0: usize,
