@@ -100,5 +100,5 @@ Cargo.lock
 
 ## Project-specific Ignores
 .fastembed_cache/
-db
+text.db
 texts
