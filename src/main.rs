@@ -5,7 +5,6 @@ use std::error::Error;
 use std::io::Write;
 use std::io::{stdout, BufWriter};
 use std::path::PathBuf;
-use text_db::{insert_texts, query_texts};
 use ticky::Stopwatch;
 
 const INSERT_BATCH_SIZE: usize = 100;
@@ -40,9 +39,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut sw = Stopwatch::start_new();
     match cli.command {
         Some(Commands::Insert { mut texts }) => {
+            let mut db = text_db::text::create_or_load_database()?;
             let mut buffer = BufWriter::new(stdout().lock());
             writeln!(buffer, "Inserting {} text(s).", texts.len())?;
-            let insertion_results = insert_texts(&mut texts)?;
+            let insertion_results = db.insert_documents(&mut texts)?;
             sw.stop();
             writeln!(
                 buffer,
@@ -53,6 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             )?;
         }
         Some(Commands::InsertFromFiles { file_paths }) => {
+            let mut db = text_db::text::create_or_load_database()?;
             let num_texts = file_paths.len();
             // writeln!(buffer, "Inserting texts from {} file(s).", num_texts)?;
             let progress_bar = ProgressBar::with_draw_target(
@@ -67,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let text = std::fs::read_to_string(file_path)?;
                 texts.push(text);
                 if i == INSERT_BATCH_SIZE - 1 {
-                    let insertion_results = insert_texts(&mut texts)?;
+                    let insertion_results = db.insert_documents(&mut texts)?;
                     progress_bar.println(format!(
                         "{} embeddings of {} dimensions inserted into the database.",
                         insertion_results.0, insertion_results.1
@@ -84,7 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             // Insert the remaining texts, if any.
             if !texts.is_empty() {
-                let insertion_results = insert_texts(&mut texts)?;
+                let insertion_results = db.insert_documents(&mut texts)?;
                 progress_bar.println(format!(
                     "{} embeddings of {} dimensions inserted into the database.",
                     insertion_results.0, insertion_results.1
@@ -98,10 +99,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             ));
         }
         Some(Commands::Query { texts }) => {
+            let mut db = text_db::text::create_or_load_database()?;
             let mut buffer = BufWriter::new(stdout().lock());
             let num_texts = texts.len();
             writeln!(buffer, "Querying {} text(s).", num_texts)?;
-            let query_results = query_texts(texts)?;
+            let query_results = db.query_documents(texts)?;
             sw.stop();
             writeln!(
                 buffer,
@@ -117,7 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Clear) => {
             let mut buffer = BufWriter::new(stdout().lock());
             writeln!(buffer, "Clearing database.")?;
-            std::fs::remove_file(text_db::DB_PATH).unwrap_or(());
+            std::fs::remove_file("text.db").unwrap_or(());
             std::fs::remove_dir_all("texts").unwrap_or(());
             std::fs::remove_dir_all(".fastembed_cache").unwrap_or(());
             sw.stop();
