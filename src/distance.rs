@@ -20,7 +20,7 @@ pub struct CosineDistance;
 impl Metric<Embedding> for CosineDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let cosine_distance: f32 = cosine(&a, &b);
+        let cosine_distance: f32 = cosine(a, b);
         cosine_distance.to_bits().into()
     }
 }
@@ -32,7 +32,7 @@ pub struct L2SquaredDistance;
 impl Metric<Embedding> for L2SquaredDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let l2_squared_distance = f32::sqeuclidean(&a, &b).unwrap();
+        let l2_squared_distance = f32::sqeuclidean(a, b).unwrap();
         l2_squared_distance.to_bits()
     }
 }
@@ -44,7 +44,7 @@ pub struct ChebyshevDistance;
 impl Metric<Embedding> for ChebyshevDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let chebyshev_distance = chebyshev(&a, &b);
+        let chebyshev_distance = chebyshev(a, b);
         chebyshev_distance.to_bits().into()
     }
 }
@@ -56,7 +56,7 @@ pub struct CanberraDistance;
 impl Metric<Embedding> for CanberraDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let canberra_distance: f32 = canberra(&a, &b);
+        let canberra_distance: f32 = canberra(a, b);
         canberra_distance.to_bits().into()
     }
 }
@@ -68,7 +68,7 @@ pub struct BrayCurtisDistance;
 impl Metric<Embedding> for BrayCurtisDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let bray_curtis_distance: f32 = bray_curtis(&a, &b);
+        let bray_curtis_distance: f32 = bray_curtis(a, b);
         bray_curtis_distance.to_bits().into()
     }
 }
@@ -80,7 +80,7 @@ pub struct ManhattanDistance;
 impl Metric<Embedding> for ManhattanDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let manhattan_distance: f32 = manhattan(&a, &b);
+        let manhattan_distance: f32 = manhattan(a, b);
         manhattan_distance.to_bits().into()
     }
 }
@@ -92,7 +92,7 @@ pub struct L2Distance;
 impl Metric<Embedding> for L2Distance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let l2_distance: f32 = euclidean(&a, &b);
+        let l2_distance: f32 = euclidean(a, b);
         l2_distance.to_bits().into()
     }
 }
@@ -104,7 +104,7 @@ pub struct L3Distance;
 impl Metric<Embedding> for L3Distance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let l3_distance: f32 = l3_norm(&a, &b);
+        let l3_distance: f32 = l3_norm(a, b);
         l3_distance.to_bits().into()
     }
 }
@@ -116,7 +116,7 @@ pub struct L4Distance;
 impl Metric<Embedding> for L4Distance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let l4_distance: f32 = l4_norm(&a, &b);
+        let l4_distance: f32 = l4_norm(a, b);
         l4_distance.to_bits().into()
     }
 }
@@ -146,7 +146,7 @@ impl Metric<Embedding> for MinkowskiDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
         let metric = minkowski(self.power);
-        let distance: f32 = metric(&a, &b);
+        let distance: f32 = metric(a, b);
         distance.to_bits().into()
     }
 }
@@ -162,7 +162,7 @@ impl Metric<Embedding> for PNormDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
         let metric = minkowski_p(self.power);
-        let distance: f32 = metric(&a, &b);
+        let distance: f32 = metric(a, b);
         distance.to_bits().into()
     }
 }

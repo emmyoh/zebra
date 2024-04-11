@@ -178,7 +178,7 @@ where
                 distance: !0,
             }; EF];
             self.hnsw
-                .nearest(&query_embedding, EF, &mut searcher, &mut neighbours);
+                .nearest(query_embedding, EF, &mut searcher, &mut neighbours);
             if neighbours.is_empty() {
                 return Ok(Vec::new());
             }

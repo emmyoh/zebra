@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     texts.clear();
                     i = 0;
                 } else {
-                    i = i + 1;
+                    i += 1;
                 }
                 progress_bar.inc(1);
                 if progress_bar.is_hidden() {
