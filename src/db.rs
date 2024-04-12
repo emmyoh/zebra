@@ -1,4 +1,4 @@
-use fastembed::{Embedding, EmbeddingModel, InitOptions, TextEmbedding};
+use fastembed::Embedding;
 use hnsw::Params;
 use hnsw::{Hnsw, Searcher};
 use pcg_rand::Pcg64;
@@ -11,6 +11,7 @@ use std::usize;
 use std::{error::Error, fs};
 
 use crate::distance::DistanceUnit;
+use crate::model::DatabaseEmbeddingModel;
 use crate::EF;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
@@ -120,22 +121,25 @@ where
     ///
     /// # Arguments
     ///
+    /// * `model` - The embedding model to be used.
+    ///
     /// * `documents` - A vector of documents to be inserted.
     ///
     /// # Returns
     ///
     /// A tuple containing the number of embeddings inserted and the dimension of the embeddings.
-    pub fn insert_documents(
+    pub fn insert_documents<Mod: DatabaseEmbeddingModel>(
         &mut self,
+        model: &Mod,
         documents: &mut Vec<String>,
     ) -> Result<(usize, usize), Box<dyn Error>> {
         documents.dedup();
-        let model = TextEmbedding::try_new(InitOptions {
-            model_name: EmbeddingModel::BGESmallENV15,
-            show_download_progress: false,
-            ..Default::default()
-        })?;
-        let new_embeddings: Vec<Embedding> = model.embed(documents.clone(), None)?;
+        // let model = TextEmbedding::try_new(InitOptions {
+        //     model_name: EmbeddingModel::BGESmallENV15,
+        //     show_download_progress: false,
+        //     ..Default::default()
+        // })?;
+        let new_embeddings: Vec<Embedding> = model.embed(documents.clone())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         for (text, embedding) in documents.iter().zip(new_embeddings.iter()) {
@@ -152,13 +156,16 @@ where
     ///
     /// # Arguments
     ///
+    /// * `model` - The embedding model to be used.
+    ///
     /// * `documents` - A vector of documents to be queried.
     ///
     /// # Returns
     ///
     /// A vector of documents that are most similar to the queried documents.
-    pub fn query_documents<S: AsRef<str> + Send + Sync>(
+    pub fn query_documents<S: AsRef<str> + Send + Sync, Mod: DatabaseEmbeddingModel>(
         &mut self,
+        model: &Mod,
         documents: Vec<S>,
     ) -> Result<Vec<String>, Box<dyn Error>> {
         if self.hnsw.is_empty() {
@@ -166,12 +173,12 @@ where
         }
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         let mut results = Vec::new();
-        let model = TextEmbedding::try_new(InitOptions {
-            model_name: EmbeddingModel::BGESmallENV15,
-            show_download_progress: false,
-            ..Default::default()
-        })?;
-        let query_embeddings = model.embed(documents, None)?;
+        // let model = TextEmbedding::try_new(InitOptions {
+        //     model_name: EmbeddingModel::BGESmallENV15,
+        //     show_download_progress: false,
+        //     ..Default::default()
+        // })?;
+        let query_embeddings = model.embed(documents)?;
         for query_embedding in query_embeddings.iter() {
             let mut neighbours = [Neighbor {
                 index: !0,

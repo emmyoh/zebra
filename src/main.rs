@@ -1,10 +1,12 @@
 use clap::{command, Parser, Subcommand};
+use fastembed::TextEmbedding;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use pretty_duration::pretty_duration;
 use std::error::Error;
 use std::io::Write;
 use std::io::{stdout, BufWriter};
 use std::path::PathBuf;
+use text_db::model::DatabaseEmbeddingModel;
 use ticky::Stopwatch;
 
 const INSERT_BATCH_SIZE: usize = 100;
@@ -41,8 +43,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::Insert { mut texts }) => {
             let mut db = text_db::text::create_or_load_database()?;
             let mut buffer = BufWriter::new(stdout().lock());
+            let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
             writeln!(buffer, "Inserting {} text(s).", texts.len())?;
-            let insertion_results = db.insert_documents(&mut texts)?;
+            let insertion_results = db.insert_documents(&model, &mut texts)?;
             sw.stop();
             writeln!(
                 buffer,
@@ -55,6 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some(Commands::InsertFromFiles { file_paths }) => {
             let mut db = text_db::text::create_or_load_database()?;
             let num_texts = file_paths.len();
+            let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
             // writeln!(buffer, "Inserting texts from {} file(s).", num_texts)?;
             let progress_bar = ProgressBar::with_draw_target(
                 Some(num_texts.try_into()?),
@@ -68,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let text = std::fs::read_to_string(file_path)?;
                 texts.push(text);
                 if i == INSERT_BATCH_SIZE - 1 {
-                    let insertion_results = db.insert_documents(&mut texts)?;
+                    let insertion_results = db.insert_documents(&model, &mut texts)?;
                     progress_bar.println(format!(
                         "{} embeddings of {} dimensions inserted into the database.",
                         insertion_results.0, insertion_results.1
@@ -85,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             // Insert the remaining texts, if any.
             if !texts.is_empty() {
-                let insertion_results = db.insert_documents(&mut texts)?;
+                let insertion_results = db.insert_documents(&model, &mut texts)?;
                 progress_bar.println(format!(
                     "{} embeddings of {} dimensions inserted into the database.",
                     insertion_results.0, insertion_results.1
@@ -102,8 +106,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut db = text_db::text::create_or_load_database()?;
             let mut buffer = BufWriter::new(stdout().lock());
             let num_texts = texts.len();
+            let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
             writeln!(buffer, "Querying {} text(s).", num_texts)?;
-            let query_results = db.query_documents(texts)?;
+            let query_results = db.query_documents(&model, texts)?;
             sw.stop();
             writeln!(
                 buffer,

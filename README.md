@@ -1,6 +1,6 @@
 # `text-db`
 
-A vector database for querying semantically similar data.
+A vector database for querying meaningfully similar data.
 The database can be extended to support documents of many data types; at the moment, only textual data is supported.
 
 ## Installation

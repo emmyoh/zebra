@@ -2,6 +2,8 @@
 pub mod db;
 /// A module for distance metrics.
 pub mod distance;
+/// A module for embedding models.
+pub mod model;
 /// A module for text database operations.
 pub mod text;
 
