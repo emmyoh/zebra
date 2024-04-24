@@ -1,6 +1,5 @@
 use clap::{command, Parser, Subcommand};
 use fastembed::TextEmbedding;
-use image::DynamicImage;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use pretty_duration::pretty_duration;
 use std::error::Error;
