@@ -1,3 +1,6 @@
+use crate::distance::DistanceUnit;
+use crate::model::DatabaseEmbeddingModel;
+use crate::EF;
 use fastembed::Embedding;
 use hnsw::Params;
 use hnsw::{Hnsw, Searcher};
@@ -10,15 +13,13 @@ use std::io::{self, BufReader, BufWriter};
 use std::usize;
 use std::{error::Error, fs};
 
-use crate::distance::DistanceUnit;
-use crate::model::DatabaseEmbeddingModel;
-use crate::EF;
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 /// The type of document stored in the database.
 pub enum DocumentType {
     /// A document containing text.
     Text,
+    /// A document containing an image.
+    Image,
 }
 
 impl DocumentType {
@@ -30,6 +31,7 @@ impl DocumentType {
     pub fn subdirectory_name(&self) -> &str {
         match self {
             DocumentType::Text => "texts",
+            DocumentType::Image => "images",
         }
     }
 
@@ -41,6 +43,7 @@ impl DocumentType {
     pub fn database_name(&self) -> &str {
         match self {
             DocumentType::Text => "text.db",
+            DocumentType::Image => "image.db",
         }
     }
 }
@@ -128,18 +131,18 @@ where
     /// # Returns
     ///
     /// A tuple containing the number of embeddings inserted and the dimension of the embeddings.
-    pub fn insert_documents<Mod: DatabaseEmbeddingModel>(
+    pub fn insert_documents<S: AsRef<str> + Send + Sync + Clone, Mod: DatabaseEmbeddingModel>(
         &mut self,
         model: &Mod,
-        documents: &mut Vec<String>,
+        documents: &[S],
     ) -> Result<(usize, usize), Box<dyn Error>> {
-        documents.dedup();
+        // documents.dedup();
         // let model = TextEmbedding::try_new(InitOptions {
         //     model_name: EmbeddingModel::BGESmallENV15,
         //     show_download_progress: false,
         //     ..Default::default()
         // })?;
-        let new_embeddings: Vec<Embedding> = model.embed(documents.clone())?;
+        let new_embeddings: Vec<Embedding> = model.embed_documents(documents.to_vec())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         for (text, embedding) in documents.iter().zip(new_embeddings.iter()) {
@@ -167,7 +170,7 @@ where
         &mut self,
         model: &Mod,
         documents: Vec<S>,
-    ) -> Result<Vec<String>, Box<dyn Error>> {
+    ) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         if self.hnsw.is_empty() {
             return Ok(Vec::new());
         }
@@ -178,7 +181,7 @@ where
         //     show_download_progress: false,
         //     ..Default::default()
         // })?;
-        let query_embeddings = model.embed(documents)?;
+        let query_embeddings = model.embed_documents(documents)?;
         for query_embedding in query_embeddings.iter() {
             let mut neighbours = [Neighbor {
                 index: !0,
@@ -193,7 +196,7 @@ where
             let nearest_neighbour = neighbours[0];
             results.push(nearest_neighbour.index);
         }
-        let documents: Vec<String> = self
+        let documents = self
             .read_documents_from_disk(&mut results)?
             .values()
             .cloned()
@@ -206,14 +209,14 @@ where
     /// # Arguments
     ///
     /// * `documents` - A map of text indices and their corresponding documents.
-    pub fn save_documents_to_disk(
+    pub fn save_documents_to_disk<S: AsRef<str> + Send + Sync>(
         &self,
-        documents: &mut HashMap<usize, String>,
+        documents: &mut HashMap<usize, S>,
     ) -> Result<(), Box<dyn Error>> {
         let document_subdirectory = self.document_type.subdirectory_name();
         std::fs::create_dir_all(document_subdirectory)?;
         for text in documents {
-            let mut reader = BufReader::new(text.1.as_bytes());
+            let mut reader = BufReader::new(text.1.as_ref().as_bytes());
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -231,27 +234,27 @@ where
     ///
     /// # Arguments
     ///
-    /// * `documents` - A vector of text indices to be read.
+    /// * `documents` - A vector of document indices to be read.
     ///
     /// # Returns
     ///
-    /// A map of text indices and their corresponding documents.
+    /// A map of document indices and the bytes of their corresponding documents.
     pub fn read_documents_from_disk(
         &self,
         documents: &mut Vec<usize>,
-    ) -> Result<HashMap<usize, String>, Box<dyn Error>> {
+    ) -> Result<HashMap<usize, Vec<u8>>, Box<dyn Error>> {
         let document_subdirectory = self.document_type.subdirectory_name();
         let mut results = HashMap::new();
-        for text_index in documents {
+        for document_index in documents {
             let file = OpenOptions::new()
                 .read(true)
-                .open(format!("{}/{}.lz4", document_subdirectory, text_index))?;
+                .open(format!("{}/{}.lz4", document_subdirectory, document_index))?;
             let buf = BufReader::new(file);
             let mut decompressor = lz4_flex::frame::FrameDecoder::new(buf);
             let mut writer = BufWriter::new(Vec::new());
             io::copy(&mut decompressor, &mut writer)?;
-            let text = String::from_utf8(writer.into_inner()?)?;
-            results.insert(*text_index, text);
+            let document = writer.into_inner()?;
+            results.insert(*document_index, document);
         }
         Ok(results)
     }

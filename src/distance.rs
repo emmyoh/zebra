@@ -13,6 +13,9 @@ pub type DistanceUnit = u64;
 /// The data type representing the distance metric for text embeddings.
 pub type DefaultTextMetric = L2SquaredDistance;
 
+/// The data type representing the distance metric for image embeddings.
+pub type DefaultImageMetric = CosineDistance;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// The cosine distance metric.
 pub struct CosineDistance;

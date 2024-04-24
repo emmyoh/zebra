@@ -35,3 +35,19 @@ ticky = "1.0.2"
 pretty-duration = "0.1.1"
 indicatif = "0.17.8"
 distances = "1.6.3"
+candle-examples = "0.4.1"
+candle-core = "0.4.1"
+candle-nn = "0.4.1"
+candle-transformers = "0.4.1"
+hf-hub = "0.3.2"
+viuer = "0.7.1"
+image = "0.24.9"
+
+[features]
+default = []
+accelerate = ["candle-core/accelerate", "candle-examples/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
+cuda = ["candle-core/cuda", "candle-examples/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+mkl = ["candle-core/mkl", "candle-examples/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
+metal = ["candle-core/metal", "candle-examples/metal", "candle-nn/metal", "candle-transformers/metal"]
+sixel = ["viuer/sixel"]
+avif = ["image/avif-encoder", "image/avif-decoder"]

@@ -1,5 +1,5 @@
 use crate::db::{Database, DocumentType};
-use crate::distance::L2SquaredDistance;
+use crate::distance::{DefaultTextMetric, L2SquaredDistance};
 
 /// A parameter regarding insertion into the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Cannot be changed after database creation.
 pub const TEXT_EF_CONSTRUCTION: usize = 400;
@@ -11,7 +11,7 @@ pub const TEXT_M: usize = 12;
 pub const TEXT_M0: usize = 24;
 
 /// A database containing texts and their embeddings.
-pub type TextDatabase = Database<L2SquaredDistance, TEXT_EF_CONSTRUCTION, TEXT_M, TEXT_M0>;
+pub type TextDatabase = Database<DefaultTextMetric, TEXT_EF_CONSTRUCTION, TEXT_M, TEXT_M0>;
 
 /// Load the text database from disk, or create it if it does not already exist.
 ///
