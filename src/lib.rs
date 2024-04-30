@@ -1,3 +1,5 @@
+/// A module for audio database operations.
+pub mod audio;
 /// A module for database operations regardless of data type.
 pub mod db;
 /// A module for distance metrics.

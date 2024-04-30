@@ -16,6 +16,9 @@ pub type DefaultTextMetric = L2SquaredDistance;
 /// The data type representing the distance metric for image embeddings.
 pub type DefaultImageMetric = CosineDistance;
 
+/// The data type representing the distance metric for audio embeddings.
+pub type DefaultAudioMetric = CosineDistance;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// The cosine distance metric.
 pub struct CosineDistance;

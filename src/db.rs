@@ -20,6 +20,8 @@ pub enum DocumentType {
     Text,
     /// A document containing an image.
     Image,
+    /// A document containing audio.
+    Audio,
 }
 
 impl DocumentType {
@@ -32,6 +34,7 @@ impl DocumentType {
         match self {
             DocumentType::Text => "texts",
             DocumentType::Image => "images",
+            &DocumentType::Audio => "audio",
         }
     }
 
@@ -44,6 +47,7 @@ impl DocumentType {
         match self {
             DocumentType::Text => "text.db",
             DocumentType::Image => "image.db",
+            &DocumentType::Audio => "audio.db",
         }
     }
 }
@@ -145,11 +149,11 @@ where
         let new_embeddings: Vec<Embedding> = model.embed_documents(documents.to_vec())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
-        for (text, embedding) in documents.iter().zip(new_embeddings.iter()) {
+        for (document, embedding) in documents.iter().zip(new_embeddings.iter()) {
             let embedding_index = self.hnsw.insert(embedding.clone(), &mut searcher);
-            let mut text_map = HashMap::new();
-            text_map.insert(embedding_index, text.clone());
-            self.save_documents_to_disk(&mut text_map)?;
+            let mut document_map = HashMap::new();
+            document_map.insert(embedding_index, document.clone());
+            self.save_documents_to_disk(&mut document_map)?;
         }
         self.save_database()?;
         Ok(length_and_dimension)

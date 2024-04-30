@@ -2,13 +2,16 @@ use clap::{command, Parser, Subcommand};
 use fastembed::TextEmbedding;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use pretty_duration::pretty_duration;
+use rodio::{Decoder, OutputStream, Sink};
 use std::error::Error;
+use std::fs::File;
+use std::io::BufReader;
 use std::io::Write;
 use std::io::{stdout, BufWriter};
 use std::path::PathBuf;
-use text_db::db::DocumentType;
-use text_db::model::{DatabaseEmbeddingModel, ImageEmbeddingModel};
 use ticky::Stopwatch;
+use zebra::db::DocumentType;
+use zebra::model::{AudioEmbeddingModel, DatabaseEmbeddingModel, ImageEmbeddingModel};
 
 const INSERT_BATCH_SIZE: usize = 100;
 
@@ -25,6 +28,8 @@ enum Commands {
     Text(Text),
     #[clap(about = "Image commands.")]
     Image(Image),
+    #[clap(about = "Audio commands.")]
+    Audio(Audio),
 }
 
 #[derive(Parser)]
@@ -37,6 +42,12 @@ struct Text {
 struct Image {
     #[structopt(subcommand)]
     image_commands: ImageCommands,
+}
+
+#[derive(Parser)]
+struct Audio {
+    #[structopt(subcommand)]
+    audio_commands: AudioCommands,
 }
 
 #[derive(Subcommand)]
@@ -73,6 +84,22 @@ enum ImageCommands {
     Clear,
 }
 
+#[derive(Subcommand)]
+enum AudioCommands {
+    #[command(
+        about = "Insert sounds into the database.",
+        arg_required_else_help(true)
+    )]
+    Insert { file_paths: Vec<PathBuf> },
+    #[command(
+        about = "Query sounds from the database.",
+        arg_required_else_help(true)
+    )]
+    Query { audio_path: PathBuf },
+    #[command(about = "Clear the database.")]
+    Clear,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     let mut sw = Stopwatch::start_new();
@@ -80,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Text(text) => {
             match text.text_commands {
                 TextCommands::Insert { mut texts } => {
-                    let mut db = text_db::text::create_or_load_database()?;
+                    let mut db = zebra::text::create_or_load_database()?;
                     let mut buffer = BufWriter::new(stdout().lock());
                     let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                     writeln!(buffer, "Inserting {} text(s).", texts.len())?;
@@ -95,7 +122,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )?;
                 }
                 TextCommands::InsertFromFiles { file_paths } => {
-                    let mut db = text_db::text::create_or_load_database()?;
+                    let mut db = zebra::text::create_or_load_database()?;
                     let num_texts = file_paths.len();
                     let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                     println!("Inserting texts from {} file(s).", num_texts);
@@ -142,7 +169,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ));
                 }
                 TextCommands::Query { texts } => {
-                    let mut db = text_db::text::create_or_load_database()?;
+                    let mut db = zebra::text::create_or_load_database()?;
                     let mut buffer = BufWriter::new(stdout().lock());
                     let num_texts = texts.len();
                     let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
@@ -182,7 +209,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Image(image) => match image.image_commands {
             ImageCommands::Insert { file_paths } => {
-                let mut db = text_db::image::create_or_load_database()?;
+                let mut db = zebra::image::create_or_load_database()?;
                 let num_images = file_paths.len();
                 let model: ImageEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 println!("Inserting images from {} file(s).", num_images);
@@ -215,7 +242,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ));
             }
             ImageCommands::Query { image_path } => {
-                let mut db = text_db::image::create_or_load_database()?;
+                let mut db = zebra::image::create_or_load_database()?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let image_print_config = viuer::Config {
                     transparent: true,
@@ -243,8 +270,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 )?;
                 writeln!(buffer, "Results:")?;
                 for result in query_results {
-                    println!("{:#?}", String::from_utf8_lossy(b"\x89PNG\r\n\x1a\n"));
-                    println!("{:#?}", String::from_utf8_lossy(&result));
                     let path = PathBuf::from(String::from_utf8(result)?);
                     let _print_result = viuer::print_from_file(&path, &image_print_config);
                 }
@@ -255,6 +280,80 @@ fn main() -> Result<(), Box<dyn Error>> {
                 writeln!(buffer, "Clearing database.")?;
                 std::fs::remove_file(image_type.database_name()).unwrap_or(());
                 std::fs::remove_dir_all(image_type.subdirectory_name()).unwrap_or(());
+                // std::fs::remove_dir_all(".fastembed_cache").unwrap_or(());
+                sw.stop();
+                writeln!(
+                    buffer,
+                    "Database cleared in {}.",
+                    pretty_duration(&sw.elapsed(), None)
+                )?;
+            }
+        },
+        Commands::Audio(audio) => match audio.audio_commands {
+            AudioCommands::Insert { file_paths } => {
+                let mut db = zebra::audio::create_or_load_database()?;
+                let num_sounds = file_paths.len();
+                let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
+                println!("Inserting sounds from {} file(s).", num_sounds);
+                let progress_bar = ProgressBar::with_draw_target(
+                    Some(num_sounds.try_into()?),
+                    ProgressDrawTarget::hidden(),
+                )
+                .with_message(format!("Inserting sounds from {} file(s).", num_sounds));
+                let sounds: Vec<String> = file_paths
+                    .into_iter()
+                    .map(|x| x.to_str().unwrap().to_string())
+                    .collect();
+                // Insert sounds in batches of INSERT_BATCH_SIZE.
+                for image_batch in sounds.chunks(INSERT_BATCH_SIZE) {
+                    let insertion_results = db.insert_documents(&model, image_batch)?;
+                    progress_bar.println(format!(
+                        "{} embeddings of {} dimensions inserted into the database.",
+                        insertion_results.0, insertion_results.1
+                    ));
+                    progress_bar.inc(INSERT_BATCH_SIZE.try_into()?);
+                    if progress_bar.is_hidden() {
+                        progress_bar.set_draw_target(ProgressDrawTarget::stderr_with_hz(100));
+                    }
+                }
+                sw.stop();
+                progress_bar.println(format!(
+                    "Inserted {} sound(s) in {}.",
+                    num_sounds,
+                    pretty_duration(&sw.elapsed(), None)
+                ));
+            }
+            AudioCommands::Query { audio_path } => {
+                let mut db = zebra::audio::create_or_load_database()?;
+                let (_stream, stream_handle) = OutputStream::try_default()?;
+                let sink = Sink::try_new(&stream_handle)?;
+                let mut buffer = BufWriter::new(stdout().lock());
+                let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
+                writeln!(buffer, "Querying sound.")?;
+                let query_results =
+                    db.query_documents(&model, vec![audio_path.to_str().unwrap()])?;
+                sw.stop();
+                writeln!(
+                    buffer,
+                    "Queried sound in {}.",
+                    pretty_duration(&sw.elapsed(), None)
+                )?;
+                writeln!(buffer, "Results:")?;
+                for result in query_results {
+                    let path = PathBuf::from(String::from_utf8(result)?);
+                    writeln!(buffer, "Playing {} … ", path.to_string_lossy())?;
+                    let file = BufReader::new(File::open(path)?);
+                    let source = Decoder::new(file)?;
+                    sink.append(source);
+                    sink.sleep_until_end();
+                }
+            }
+            AudioCommands::Clear => {
+                let audio_type = DocumentType::Audio;
+                let mut buffer = BufWriter::new(stdout().lock());
+                writeln!(buffer, "Clearing database.")?;
+                std::fs::remove_file(audio_type.database_name()).unwrap_or(());
+                std::fs::remove_dir_all(audio_type.subdirectory_name()).unwrap_or(());
                 // std::fs::remove_dir_all(".fastembed_cache").unwrap_or(());
                 sw.stop();
                 writeln!(

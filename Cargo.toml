@@ -1,20 +1,20 @@
 [package]
-name = "text-db"
-authors = ["Emil Sayahi <sayahie@miamioh.edu>"]
+name = "zebra"
+authors = ["Emil Sayahi"]
 description = "A vector database for querying meaningfully similar data."
-repository = "https://github.com/emmyoh/text-db/"
+repository = "https://github.com/emmyoh/zebra/"
 license = "AGPL-3.0-or-later"
 readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "text_db"
+name = "zebra"
 path = "src/lib.rs"
 crate-type=["rlib", "dylib", "staticlib"]
 
 [[bin]]
-name = "text-db"
+name = "zebra"
 path = "src/main.rs"
 doc = false
 required-features = ["cli"]
@@ -42,7 +42,9 @@ candle-nn = "0.4.1"
 candle-transformers = "0.4.1"
 hf-hub = "0.3.2"
 viuer = { version = "0.7.1", optional = true }
-# image = "0.24.9"
+sonogram = "0.7.1"
+image = "0.24.9"
+rodio = { version = "0.17.3", optional = true }
 
 [features]
 default = []
@@ -51,5 +53,5 @@ cuda = ["candle-core/cuda", "candle-examples/cuda", "candle-nn/cuda", "candle-tr
 mkl = ["candle-core/mkl", "candle-examples/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 metal = ["candle-core/metal", "candle-examples/metal", "candle-nn/metal", "candle-transformers/metal"]
 sixel = ["viuer/sixel"]
-# avif = ["image/avif-encoder", "image/avif-decoder"]
-cli = ["clap", "ticky", "pretty-duration", "indicatif", "viuer"]
+avif = ["image/avif-encoder", "image/avif-decoder"]
+cli = ["clap", "ticky", "pretty-duration", "indicatif", "viuer", "rodio"]

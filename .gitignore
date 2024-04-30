@@ -102,3 +102,7 @@ Cargo.lock
 .fastembed_cache/
 text.db
 texts
+image.db
+images
+audio.db
+audio
