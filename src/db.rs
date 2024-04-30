@@ -221,20 +221,20 @@ where
     ///
     /// # Arguments
     ///
-    /// * `documents` - A map of text indices and their corresponding documents.
+    /// * `documents` - A map of document indices and their corresponding documents.
     pub fn save_documents_to_disk<S: AsRef<str> + Send + Sync>(
         &self,
         documents: &mut HashMap<usize, S>,
     ) -> Result<(), Box<dyn Error>> {
         let document_subdirectory = self.document_type.subdirectory_name();
         std::fs::create_dir_all(document_subdirectory)?;
-        for text in documents {
-            let mut reader = BufReader::new(text.1.as_ref().as_bytes());
+        for document in documents {
+            let mut reader = BufReader::new(document.1.as_ref().as_bytes());
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
-                .open(format!("{}/{}.lz4", document_subdirectory, text.0))?;
+                .open(format!("{}/{}.lz4", document_subdirectory, document.0))?;
             let buf = BufWriter::new(file);
             let mut compressor = lz4_flex::frame::FrameEncoder::new(buf);
             io::copy(&mut reader, &mut compressor)?;
