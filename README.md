@@ -22,7 +22,7 @@ cargo install --git https://github.com/emmyoh/zebra --features="cli"
 
 You should specify the features relevant to your use case. For example, if you're interested in using the Zebra CLI on an Apple silicon device, run:
 ```bash
-cargo install --git https://github.com/emmyoh/zebra --features="cli,metal"
+cargo install --git https://github.com/emmyoh/zebra --features="cli,accelerate,metal"
 ```
 
 ## Features
