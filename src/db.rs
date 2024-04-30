@@ -167,6 +167,8 @@ where
     ///
     /// * `documents` - A vector of documents to be queried.
     ///
+    /// * `number_of_results` - An optional positive integer less than or equal to `EF` specifying the number of query results to return.
+    ///
     /// # Returns
     ///
     /// A vector of documents that are most similar to the queried documents.
@@ -174,10 +176,15 @@ where
         &mut self,
         model: &Mod,
         documents: Vec<S>,
+        number_of_results: Option<usize>,
     ) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         if self.hnsw.is_empty() {
             return Ok(Vec::new());
         }
+        let number_of_results = match number_of_results {
+            None => 1,
+            Some(number_of_results) => std::cmp::min(number_of_results, EF),
+        };
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         let mut results = Vec::new();
         // let model = TextEmbedding::try_new(InitOptions {
@@ -197,8 +204,10 @@ where
                 return Ok(Vec::new());
             }
             neighbours.sort_unstable_by_key(|n| n.distance);
-            let nearest_neighbour = neighbours[0];
-            results.push(nearest_neighbour.index);
+            for i in 0..number_of_results {
+                let neighbour = neighbours[i];
+                results.push(neighbour.index);
+            }
         }
         let documents = self
             .read_documents_from_disk(&mut results)?

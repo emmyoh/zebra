@@ -63,7 +63,10 @@ enum TextCommands {
     )]
     InsertFromFiles { file_paths: Vec<PathBuf> },
     #[command(about = "Query texts from the database.", arg_required_else_help(true))]
-    Query { texts: Vec<String> },
+    Query {
+        texts: Vec<String>,
+        number_of_results: Option<usize>,
+    },
     #[command(about = "Clear the database.")]
     Clear,
 }
@@ -79,7 +82,10 @@ enum ImageCommands {
         about = "Query images from the database.",
         arg_required_else_help(true)
     )]
-    Query { image_path: PathBuf },
+    Query {
+        image_path: PathBuf,
+        number_of_results: Option<usize>,
+    },
     #[command(about = "Clear the database.")]
     Clear,
 }
@@ -95,7 +101,10 @@ enum AudioCommands {
         about = "Query sounds from the database.",
         arg_required_else_help(true)
     )]
-    Query { audio_path: PathBuf },
+    Query {
+        audio_path: PathBuf,
+        number_of_results: Option<usize>,
+    },
     #[command(about = "Clear the database.")]
     Clear,
 }
@@ -168,13 +177,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                         pretty_duration(&sw.elapsed(), None)
                     ));
                 }
-                TextCommands::Query { texts } => {
+                TextCommands::Query {
+                    texts,
+                    number_of_results,
+                } => {
                     let mut db = zebra::text::create_or_load_database()?;
                     let mut buffer = BufWriter::new(stdout().lock());
                     let num_texts = texts.len();
                     let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                     writeln!(buffer, "Querying {} text(s).", num_texts)?;
-                    let query_results = db.query_documents(&model, texts)?;
+                    let query_results = db.query_documents(&model, texts, number_of_results)?;
                     let result_texts: Vec<String> = query_results
                         .iter()
                         .map(|x| String::from_utf8(x.to_vec()).unwrap())
@@ -241,7 +253,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     pretty_duration(&sw.elapsed(), None)
                 ));
             }
-            ImageCommands::Query { image_path } => {
+            ImageCommands::Query {
+                image_path,
+                number_of_results,
+            } => {
                 let mut db = zebra::image::create_or_load_database()?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let image_print_config = viuer::Config {
@@ -260,8 +275,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 };
                 let model: ImageEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying image.")?;
-                let query_results =
-                    db.query_documents(&model, vec![image_path.to_str().unwrap()])?;
+                let query_results = db.query_documents(
+                    &model,
+                    vec![image_path.to_str().unwrap()],
+                    number_of_results,
+                )?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -323,15 +341,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     pretty_duration(&sw.elapsed(), None)
                 ));
             }
-            AudioCommands::Query { audio_path } => {
+            AudioCommands::Query {
+                audio_path,
+                number_of_results,
+            } => {
                 let mut db = zebra::audio::create_or_load_database()?;
                 let (_stream, stream_handle) = OutputStream::try_default()?;
                 let sink = Sink::try_new(&stream_handle)?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying sound.")?;
-                let query_results =
-                    db.query_documents(&model, vec![audio_path.to_str().unwrap()])?;
+                let query_results = db.query_documents(
+                    &model,
+                    vec![audio_path.to_str().unwrap()],
+                    number_of_results,
+                )?;
                 sw.stop();
                 writeln!(
                     buffer,
