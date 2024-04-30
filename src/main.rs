@@ -1,5 +1,6 @@
 use clap::{command, Parser, Subcommand};
 use fastembed::TextEmbedding;
+use indicatif::ProgressStyle;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use pretty_duration::pretty_duration;
 use rodio::{Decoder, OutputStream, Sink};
@@ -138,8 +139,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let progress_bar = ProgressBar::with_draw_target(
                         Some(num_texts.try_into()?),
                         ProgressDrawTarget::hidden(),
-                    )
-                    .with_message(format!("Inserting texts from {} file(s).", num_texts));
+                    );
+                    // .with_message(format!("Inserting texts from {} file(s).", num_texts));
+                    progress_bar.set_style(progress_bar_style()?);
                     let mut i = 0;
                     let mut texts = Vec::new();
                     // Insert texts in batches of INSERT_BATCH_SIZE.
@@ -228,8 +230,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let progress_bar = ProgressBar::with_draw_target(
                     Some(num_images.try_into()?),
                     ProgressDrawTarget::hidden(),
-                )
-                .with_message(format!("Inserting images from {} file(s).", num_images));
+                );
+                // .with_message(format!("Inserting images from {} file(s).", num_images));
+                progress_bar.set_style(progress_bar_style()?);
                 let images: Vec<String> = file_paths
                     .into_iter()
                     .map(|x| x.to_str().unwrap().to_string())
@@ -316,8 +319,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let progress_bar = ProgressBar::with_draw_target(
                     Some(num_sounds.try_into()?),
                     ProgressDrawTarget::hidden(),
-                )
-                .with_message(format!("Inserting sounds from {} file(s).", num_sounds));
+                );
+                // .with_message(format!("Inserting sounds from {} file(s).", num_sounds));
+                progress_bar.set_style(progress_bar_style()?);
                 let sounds: Vec<String> = file_paths
                     .into_iter()
                     .map(|x| x.to_str().unwrap().to_string())
@@ -390,4 +394,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         // _ => unreachable!(),
     }
     Ok(())
+}
+
+fn progress_bar_style() -> Result<ProgressStyle, Box<dyn Error>> {
+    Ok(ProgressStyle::with_template("[{elapsed} elapsed, {eta} remaining ({duration} total)] {wide_bar:.cyan/blue} {human_pos} of {human_len} ({percent}%) {msg}")?)
 }

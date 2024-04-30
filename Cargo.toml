@@ -34,7 +34,7 @@ space = "0.17.0"
 lz4_flex = { version = "0.11.3", default-features = false, features = ["frame"] }
 ticky = { version = "1.0.2", optional = true }
 pretty-duration = { version = "0.1.1", optional = true }
-indicatif = { version = "0.17.8", optional = true }
+indicatif = { version = "0.17.8", optional = true, features = ["rayon", "improved_unicode"] }
 distances = "1.6.3"
 candle-examples = "0.4.1"
 candle-core = "0.4.1"
