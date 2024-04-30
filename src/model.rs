@@ -116,6 +116,11 @@ impl DatabaseEmbeddingModel for ImageEmbeddingModel {
 pub struct AudioEmbeddingModel;
 
 impl AudioEmbeddingModel {
+    /// Convert a waveform audio file into a logarithm-scale spectrogram for use with image embedding models.
+    ///
+    /// # Arguments
+    ///
+    /// `path` - The path to the waveform audio file.
     pub fn audio_to_image_tensor<S: AsRef<str> + Send + Sync>(
         path: S,
     ) -> Result<Tensor, Box<dyn Error>> {
