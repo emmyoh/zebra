@@ -186,6 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut buffer = BufWriter::new(stdout().lock());
                 let image_print_config = viuer::Config {
                     transparent: true,
+                    premultiplied_alpha: false,
                     absolute_offset: false,
                     x: 0,
                     y: 0,
@@ -214,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 writeln!(buffer, "Results:")?;
                 for result in query_results {
                     let path = PathBuf::from(String::from_utf8(result)?);
-                    let _print_result = viuer::print_from_file(&path, &image_print_config);
+                    let _ = viuer::print_from_file(&path, &image_print_config);
                 }
             }
             ImageCommands::Clear => {

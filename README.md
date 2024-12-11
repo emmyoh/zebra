@@ -31,5 +31,4 @@ cargo install --git https://github.com/emmyoh/zebra --features="cli,accelerate,m
 * `mkl` - Uses Intel oneMKL with Intel CPUs and GPUs.
 * `metal` - Enables GPU support for Apple silicon machines.
 * `sixel` - Prints images in Sixel format when using the CLI with compatible terminals.
-* `avif` - Enables querying & inserting AVIF images.
 * `cli` - Provides a command-line interface to Zebra.

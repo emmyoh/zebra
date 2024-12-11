@@ -45,9 +45,9 @@ impl DocumentType {
     /// The name of the database file.
     pub fn database_name(&self) -> &str {
         match self {
-            DocumentType::Text => "text.db",
-            DocumentType::Image => "image.db",
-            &DocumentType::Audio => "audio.db",
+            DocumentType::Text => "text.zebra",
+            DocumentType::Image => "image.zebra",
+            &DocumentType::Audio => "audio.zebra",
         }
     }
 }
@@ -140,12 +140,6 @@ where
         model: &Mod,
         documents: &[S],
     ) -> Result<(usize, usize), Box<dyn Error>> {
-        // documents.dedup();
-        // let model = TextEmbedding::try_new(InitOptions {
-        //     model_name: EmbeddingModel::BGESmallENV15,
-        //     show_download_progress: false,
-        //     ..Default::default()
-        // })?;
         let new_embeddings: Vec<Embedding> = model.embed_documents(documents.to_vec())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();

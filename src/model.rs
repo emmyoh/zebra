@@ -44,11 +44,9 @@ pub trait DatabaseEmbeddingModel {
 
 impl DatabaseEmbeddingModel for TextEmbedding {
     fn new() -> Result<Self, Box<dyn Error>> {
-        Ok(TextEmbedding::try_new(InitOptions {
-            model_name: EmbeddingModel::BGESmallENV15,
-            show_download_progress: false,
-            ..Default::default()
-        })?)
+        Ok(TextEmbedding::try_new(
+            InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(false),
+        )?)
     }
     fn embed_documents<S: AsRef<str> + Send + Sync>(
         &self,
