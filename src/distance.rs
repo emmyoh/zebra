@@ -10,15 +10,6 @@ use space::Metric;
 /// The data type representing the distance between two embeddings.
 pub type DistanceUnit = u64;
 
-/// The data type representing the distance metric for text embeddings.
-pub type DefaultTextMetric = L2SquaredDistance;
-
-/// The data type representing the distance metric for image embeddings.
-pub type DefaultImageMetric = CosineDistance;
-
-/// The data type representing the distance metric for audio embeddings.
-pub type DefaultAudioMetric = CosineDistance;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// The cosine distance metric.
 pub struct CosineDistance;

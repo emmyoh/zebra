@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use clap::{command, Parser, Subcommand};
 use fastembed::Embedding;
-use fastembed::TextEmbedding;
 use indicatif::HumanCount;
 use indicatif::ProgressStyle;
 use indicatif::{ProgressBar, ProgressDrawTarget};
@@ -18,10 +17,10 @@ use std::io::Write;
 use std::io::{stdout, BufWriter};
 use std::path::PathBuf;
 use ticky::Stopwatch;
-use zebra::db::Database;
-use zebra::db::DocumentType;
+use zebra::database::core::Database;
+use zebra::database::core::DocumentType;
 use zebra::distance::DistanceUnit;
-use zebra::model::{AudioEmbeddingModel, DatabaseEmbeddingModel, ImageEmbeddingModel};
+use zebra::model::core::DatabaseEmbeddingModel;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None, arg_required_else_help(true))]
@@ -138,12 +137,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Text(text) => match text.text_commands {
             TextCommands::Insert { texts } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = zebra::text::create_or_load_database()?;
+                let mut db = zebra::database::default::text::create_or_load_database()?;
                 let mut buffer = BufWriter::new(stdout().lock());
-                let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Inserting {} text(s).", texts.len())?;
                 let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
-                let insertion_results = db.insert_documents(&model, texts_bytes)?;
+                let insertion_results = db.insert_documents(texts_bytes)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -157,22 +155,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 file_paths,
                 batch_size,
             } => {
-                let mut db = zebra::text::create_or_load_database()?;
-                let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
-                insert_from_files(&mut db, model, file_paths, batch_size)?;
+                let mut db = zebra::database::default::text::create_or_load_database()?;
+                insert_from_files(&mut db, file_paths, batch_size)?;
             }
             TextCommands::Query {
                 texts,
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = zebra::text::create_or_load_database()?;
+                let mut db = zebra::database::default::text::create_or_load_database()?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let num_texts = texts.len();
-                let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying {} text(s).", num_texts)?;
                 let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
-                let query_results = db.query_documents(&model, texts_bytes, number_of_results)?;
+                let query_results = db.query_documents(texts_bytes, number_of_results)?;
                 let result_texts: Vec<_> = query_results
                     .iter()
                     .map(|x| String::from_utf8_lossy(x))
@@ -198,16 +194,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 file_paths,
                 batch_size,
             } => {
-                let mut db = zebra::image::create_or_load_database()?;
-                let model: ImageEmbeddingModel = DatabaseEmbeddingModel::new()?;
-                insert_from_files(&mut db, model, file_paths, batch_size)?;
+                let mut db = zebra::database::default::image::create_or_load_database()?;
+                insert_from_files(&mut db, file_paths, batch_size)?;
             }
             ImageCommands::Query {
                 image_path,
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = zebra::image::create_or_load_database()?;
+                let mut db = zebra::database::default::image::create_or_load_database()?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let image_print_config = viuer::Config {
                     transparent: true,
@@ -224,11 +219,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     #[cfg(feature = "sixel")]
                     use_sixel: true,
                 };
-                let model: ImageEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying image.")?;
                 let image_bytes = std::fs::read(image_path).unwrap_or_default().into();
-                let query_results =
-                    db.query_documents(&model, vec![image_bytes], number_of_results)?;
+                let query_results = db.query_documents(vec![image_bytes], number_of_results)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -250,24 +243,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 file_paths,
                 batch_size,
             } => {
-                let mut db = zebra::audio::create_or_load_database()?;
-                let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
-                insert_from_files(&mut db, model, file_paths, batch_size)?;
+                let mut db = zebra::database::default::audio::create_or_load_database()?;
+                insert_from_files(&mut db, file_paths, batch_size)?;
             }
             AudioCommands::Query {
                 audio_path,
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = zebra::audio::create_or_load_database()?;
+                let mut db = zebra::database::default::audio::create_or_load_database()?;
                 let (_stream, stream_handle) = OutputStream::try_default()?;
                 let sink = Sink::try_new(&stream_handle)?;
                 let mut buffer = BufWriter::new(stdout().lock());
-                let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying sound.")?;
                 let audio_bytes = std::fs::read(audio_path).unwrap_or_default().into();
-                let query_results =
-                    db.query_documents(&model, vec![audio_bytes], number_of_results)?;
+                let query_results = db.query_documents(vec![audio_bytes], number_of_results)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -316,17 +306,18 @@ fn clear_database(document_type: DocumentType) -> Result<(), Box<dyn Error>> {
 
 fn insert_from_files<
     Met: Metric<Embedding, Unit = DistanceUnit> + serde::ser::Serialize,
+    Model: DatabaseEmbeddingModel + serde::ser::Serialize,
     const EF_CONSTRUCTION: usize,
     const M: usize,
     const M0: usize,
 >(
-    db: &mut Database<Met, EF_CONSTRUCTION, M, M0>,
-    model: impl DatabaseEmbeddingModel,
+    db: &mut Database<Met, Model, EF_CONSTRUCTION, M, M0>,
     file_paths: Vec<PathBuf>,
     batch_size: usize,
 ) -> Result<(), Box<dyn Error>>
 where
     for<'de> Met: serde::Deserialize<'de>,
+    for<'de> Model: serde::Deserialize<'de>,
 {
     let mut sw = Stopwatch::start_new();
     let num_documents = file_paths.len();
@@ -346,7 +337,7 @@ where
     // Insert documents in batches.
     for document_batch in documents.chunks(batch_size) {
         let mut batch_sw = Stopwatch::start_new();
-        let insertion_results = db.insert_documents(&model, document_batch.to_vec())?;
+        let insertion_results = db.insert_documents(document_batch.to_vec())?;
         batch_sw.stop();
         progress_bar.println(format!(
             "{} embeddings of {} dimensions inserted into the database in {}.",

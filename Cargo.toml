@@ -51,9 +51,10 @@ symphonia = "0.5.4"
 
 [features]
 default = []
+default_db = []
 accelerate = ["candle-core/accelerate", "candle-examples/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
 cuda = ["candle-core/cuda", "candle-examples/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 mkl = ["candle-core/mkl", "candle-examples/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 metal = ["candle-core/metal", "candle-examples/metal", "candle-nn/metal", "candle-transformers/metal"]
 sixel = ["viuer/sixel"]
-cli = ["dep:clap", "dep:ticky", "dep:pretty-duration", "dep:indicatif", "dep:viuer", "dep:rodio"]
+cli = ["default_db", "dep:clap", "dep:ticky", "dep:pretty-duration", "dep:indicatif", "dep:viuer", "dep:rodio"]

@@ -1,5 +1,5 @@
 use crate::distance::DistanceUnit;
-use crate::model::DatabaseEmbeddingModel;
+use crate::model::core::DatabaseEmbeddingModel;
 use bytes::Bytes;
 use fastembed::Embedding;
 use hnsw::Params;
@@ -67,6 +67,7 @@ impl DocumentType {
 /// * `M0` - The number of bi-directional links created for each node in the HNSW graph in the first layer. Cannot be changed after database creation.
 pub struct Database<
     Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
+    Model: DatabaseEmbeddingModel + Serialize,
     const EF_CONSTRUCTION: usize,
     const M: usize,
     const M0: usize,
@@ -74,17 +75,20 @@ pub struct Database<
     /// The Hierarchical Navigable Small World (HNSW) graph containing the embeddings.
     pub hnsw: Hnsw<Met, Embedding, Pcg64, M, M0>,
     /// The type of documents stored in the database.
-    pub document_type: DocumentType,
+    // pub document_type: DocumentType,
+    pub model: Model,
 }
 
 impl<
         Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
+        Model: DatabaseEmbeddingModel + Serialize,
         const EF_CONSTRUCTION: usize,
         const M: usize,
         const M0: usize,
-    > Database<Met, EF_CONSTRUCTION, M, M0>
+    > Database<Met, Model, EF_CONSTRUCTION, M, M0>
 where
     for<'de> Met: Deserialize<'de>,
+    for<'de> Model: Deserialize<'de>,
 {
     /// Load the database from disk, or create it if it does not already exist.
     ///
@@ -97,10 +101,8 @@ where
     /// # Returns
     ///
     /// A database containing a HNSW graph and the inserted documents.
-    pub fn create_or_load_database(
-        metric: Met,
-        document_type: DocumentType,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub fn create_or_load_database(metric: Met, model: Model) -> Result<Self, Box<dyn Error>> {
+        let document_type = model.document_type();
         let db_bytes = fs::read(document_type.database_name());
         match db_bytes {
             Ok(bytes) => {
@@ -109,10 +111,7 @@ where
             }
             Err(_) => {
                 let hnsw = Hnsw::new_params(metric, Params::new().ef_construction(EF_CONSTRUCTION));
-                let db = Database {
-                    hnsw,
-                    document_type,
-                };
+                let db = Database { hnsw, model };
                 let db_bytes = bincode::serialize(&db)?;
                 fs::write(document_type.database_name(), db_bytes)?;
                 Ok(db)
@@ -123,7 +122,7 @@ where
     /// Save the database to disk.
     pub fn save_database(&self) -> Result<(), Box<dyn Error>> {
         let db_bytes = bincode::serialize(&self)?;
-        fs::write(self.document_type.database_name(), db_bytes)?;
+        fs::write(self.model.document_type().database_name(), db_bytes)?;
         Ok(())
     }
 
@@ -138,12 +137,11 @@ where
     /// # Returns
     ///
     /// A tuple containing the number of embeddings inserted and the dimension of the embeddings.
-    pub fn insert_documents<Mod: DatabaseEmbeddingModel>(
+    pub fn insert_documents(
         &mut self,
-        model: &Mod,
         documents: Vec<Bytes>,
     ) -> Result<(usize, usize), Box<dyn Error>> {
-        let new_embeddings: Vec<Embedding> = model.embed_documents(documents.to_vec())?;
+        let new_embeddings: Vec<Embedding> = self.model.embed_documents(documents.to_vec())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
         let records: Vec<_> = new_embeddings
             .into_par_iter()
@@ -186,9 +184,8 @@ where
     /// # Returns
     ///
     /// A vector of documents that are most similar to the queried documents.
-    pub fn query_documents<Mod: DatabaseEmbeddingModel>(
+    pub fn query_documents(
         &mut self,
-        model: &Mod,
         documents: Vec<Bytes>,
         number_of_results: usize,
     ) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
@@ -197,7 +194,7 @@ where
         }
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         let mut results = Vec::new();
-        let query_embeddings = model.embed_documents(documents)?;
+        let query_embeddings = self.model.embed_documents(documents)?;
         for query_embedding in query_embeddings.iter() {
             let mut neighbours = Vec::new();
             self.hnsw.nearest(
@@ -232,7 +229,8 @@ where
         &self,
         documents: &mut HashMap<usize, Bytes>,
     ) -> Result<(), Box<dyn Error>> {
-        let document_subdirectory = self.document_type.subdirectory_name();
+        let document_type = self.model.document_type();
+        let document_subdirectory = document_type.subdirectory_name();
         std::fs::create_dir_all(document_subdirectory)?;
         for document in documents {
             let mut reader = BufReader::new(document.1.as_ref());
@@ -262,7 +260,8 @@ where
         &self,
         documents: &mut Vec<usize>,
     ) -> Result<HashMap<usize, Vec<u8>>, Box<dyn Error>> {
-        let document_subdirectory = self.document_type.subdirectory_name();
+        let document_type = self.model.document_type();
+        let document_subdirectory = document_type.subdirectory_name();
         let mut results = HashMap::new();
         for document_index in documents {
             let file = OpenOptions::new()

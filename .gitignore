@@ -106,3 +106,4 @@ image.db
 images
 audio.db
 audio
+*_old.rs
