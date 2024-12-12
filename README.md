@@ -26,6 +26,7 @@ cargo install --git https://github.com/emmyoh/zebra --features="cli,accelerate,m
 ```
 
 ## Features
+* `default_db` - Provides default configurations for databases.
 * `accelerate` - Uses Apple's Accelerate framework when running on Apple operating systems.
 * `cuda` - Enables GPU support with Nvidia cards.
 * `mkl` - Uses Intel oneMKL with Intel CPUs and GPUs.

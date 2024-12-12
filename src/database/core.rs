@@ -60,6 +60,8 @@ impl DocumentType {
 ///
 /// * `Met` - The distance metric for the embeddings. Can be changed after database creation.
 ///
+/// * `Model` - The model used to generate embeddings. Should not be changed after database creation.
+///
 /// * `EF_CONSTRUCTION` - A parameter regarding insertion into the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Cannot be changed after database creation.
 ///
 /// * `M` - The number of bi-directional links created for each node in the HNSW graph. Cannot be changed after database creation. Increases memory usage and decreases retrieval speed with higher values.
@@ -74,8 +76,7 @@ pub struct Database<
 > {
     /// The Hierarchical Navigable Small World (HNSW) graph containing the embeddings.
     pub hnsw: Hnsw<Met, Embedding, Pcg64, M, M0>,
-    /// The type of documents stored in the database.
-    // pub document_type: DocumentType,
+    /// The model used to generate embeddings. Should not be changed after database creation.
     pub model: Model,
 }
 
@@ -94,9 +95,9 @@ where
     ///
     /// # Arguments
     ///
-    /// * `metric` - The distance metric for the embeddings.
+    /// * `metric` - The distance metric for the embeddings. Can be changed after database creation.
     ///
-    /// * `document_type` - The type of documents stored in the database.
+    /// * `model` - The model used to generate embeddings. Should not be changed after database creation.
     ///
     /// # Returns
     ///
@@ -129,8 +130,6 @@ where
     /// Insert documents into the database. Inserting too many documents at once may take too much time and memory.
     ///
     /// # Arguments
-    ///
-    /// * `model` - The embedding model to be used.
     ///
     /// * `documents` - A vector of documents to be inserted.
     ///
@@ -174,8 +173,6 @@ where
     /// Query documents from the database.
     ///
     /// # Arguments
-    ///
-    /// * `model` - The embedding model to be used.
     ///
     /// * `documents` - A vector of documents to be queried.
     ///
