@@ -29,8 +29,9 @@ pub struct L2SquaredDistance;
 impl Metric<Embedding> for L2SquaredDistance {
     type Unit = DistanceUnit;
     fn distance(&self, a: &Embedding, b: &Embedding) -> Self::Unit {
-        let l2_squared_distance = f32::sqeuclidean(a, b).unwrap();
-        l2_squared_distance.to_bits()
+        f32::sqeuclidean(a, b)
+            .map(|x| x.to_bits())
+            .unwrap_or_default()
     }
 }
 

@@ -40,6 +40,9 @@ impl DatabaseEmbeddingModel for BGESmallEn1_5 {
             .filter_map(|x| String::from_utf8(x).ok())
             .collect();
         let vector_of_embeddings = model.embed(vec_with_document, None)?;
-        Ok(vector_of_embeddings.first().unwrap().to_vec())
+        Ok(vector_of_embeddings
+            .first()
+            .map(|x| x.to_vec())
+            .unwrap_or_default())
     }
 }

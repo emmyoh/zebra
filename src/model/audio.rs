@@ -1,6 +1,7 @@
 use super::core::DatabaseEmbeddingModel;
 use super::image::ImageEmbeddingModel;
 use crate::database::core::DocumentType;
+use anyhow::anyhow;
 use bytes::Bytes;
 use candle_core::DType;
 use candle_core::Tensor;
@@ -46,7 +47,7 @@ pub trait AudioEmbeddingModel: ImageEmbeddingModel {
             .tracks()
             .into_par_iter()
             .find_any(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .unwrap();
+            .ok_or(anyhow!("No tracks found in audio … "))?;
         let dec_opts: DecoderOptions = Default::default();
         let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
         let track_id = track.id;
@@ -97,7 +98,8 @@ pub trait AudioEmbeddingModel: ImageEmbeddingModel {
             .load_data_from_memory(data, sample_rate)
             .normalise()
             .build()
-            .unwrap();
+            .ok()
+            .ok_or(anyhow!("Unable to compute spectrograph … "))?;
         let mut spectrogram = spectrograph.compute();
         let mut gradient = ColourGradient::rainbow_theme();
         let png_bytes =
