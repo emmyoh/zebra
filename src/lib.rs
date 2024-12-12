@@ -14,6 +14,3 @@ pub mod image;
 pub mod model;
 /// A module for text database operations.
 pub mod text;
-
-/// The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Can be changed after database creation.
-pub const EF: usize = 24;

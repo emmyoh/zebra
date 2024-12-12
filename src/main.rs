@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use clap::{command, Parser, Subcommand};
 use fastembed::Embedding;
 use fastembed::TextEmbedding;
@@ -5,6 +6,9 @@ use indicatif::HumanCount;
 use indicatif::ProgressStyle;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use pretty_duration::pretty_duration;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 use rodio::{Decoder, OutputStream, Sink};
 use space::Metric;
 use std::error::Error;
@@ -71,7 +75,8 @@ enum TextCommands {
     #[command(about = "Query texts from the database.", arg_required_else_help(true))]
     Query {
         texts: Vec<String>,
-        number_of_results: Option<usize>,
+        #[arg(default_value_t = 1)]
+        number_of_results: usize,
     },
     #[command(about = "Clear the database.")]
     Clear,
@@ -90,7 +95,8 @@ enum ImageCommands {
     )]
     Query {
         image_path: PathBuf,
-        number_of_results: Option<usize>,
+        #[arg(default_value_t = 1)]
+        number_of_results: usize,
     },
     #[command(about = "Clear the database.")]
     Clear,
@@ -109,7 +115,8 @@ enum AudioCommands {
     )]
     Query {
         audio_path: PathBuf,
-        number_of_results: Option<usize>,
+        #[arg(default_value_t = 1)]
+        number_of_results: usize,
     },
     #[command(about = "Clear the database.")]
     Clear,
@@ -119,13 +126,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     match cli.commands {
         Commands::Text(text) => match text.text_commands {
-            TextCommands::Insert { mut texts } => {
+            TextCommands::Insert { texts } => {
                 let mut sw = Stopwatch::start_new();
                 let mut db = zebra::text::create_or_load_database()?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Inserting {} text(s).", texts.len())?;
-                let insertion_results = db.insert_documents(&model, &mut texts)?;
+                let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
+                let insertion_results = db.insert_documents(&model, &texts_bytes)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -150,10 +158,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let num_texts = texts.len();
                 let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying {} text(s).", num_texts)?;
-                let query_results = db.query_documents(&model, texts, number_of_results)?;
-                let result_texts: Vec<String> = query_results
+                let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
+                let query_results = db.query_documents(&model, texts_bytes, number_of_results)?;
+                let result_texts: Vec<_> = query_results
                     .iter()
-                    .map(|x| String::from_utf8(x.to_vec()).unwrap())
+                    .map(|x| String::from_utf8_lossy(x))
                     .collect();
                 sw.stop();
                 writeln!(
@@ -201,11 +210,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 };
                 let model: ImageEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying image.")?;
-                let query_results = db.query_documents(
-                    &model,
-                    vec![image_path.to_str().unwrap()],
-                    number_of_results,
-                )?;
+                let image_bytes = std::fs::read(image_path).unwrap_or_default().into();
+                let query_results =
+                    db.query_documents(&model, vec![image_bytes], number_of_results)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -239,11 +246,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut buffer = BufWriter::new(stdout().lock());
                 let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Querying sound.")?;
-                let query_results = db.query_documents(
-                    &model,
-                    vec![audio_path.to_str().unwrap()],
-                    number_of_results,
-                )?;
+                let audio_bytes = std::fs::read(audio_path).unwrap_or_default().into();
+                let query_results =
+                    db.query_documents(&model, vec![audio_bytes], number_of_results)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -264,7 +269,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 clear_database(DocumentType::Audio)?;
             }
         },
-        // _ => unreachable!(),
     }
     Ok(())
 }
@@ -315,9 +319,9 @@ where
         ProgressDrawTarget::hidden(),
     );
     progress_bar.set_style(progress_bar_style()?);
-    let documents: Vec<String> = file_paths
-        .into_iter()
-        .map(|x| x.to_str().unwrap().to_string())
+    let documents: Vec<_> = file_paths
+        .par_iter()
+        .filter_map(|x| std::fs::read(x).ok().map(|y| y.into()))
         .collect();
     // Insert documents in batches of INSERT_BATCH_SIZE.
     for document_batch in documents.chunks(INSERT_BATCH_SIZE) {

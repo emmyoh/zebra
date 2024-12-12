@@ -1,12 +1,12 @@
 use crate::distance::DistanceUnit;
 use crate::model::DatabaseEmbeddingModel;
-use crate::EF;
+use bytes::Bytes;
 use fastembed::Embedding;
 use hnsw::Params;
 use hnsw::{Hnsw, Searcher};
 use pcg_rand::Pcg64;
 use serde::{Deserialize, Serialize};
-use space::{Metric, Neighbor};
+use space::Metric;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{self, BufReader, BufWriter};
@@ -135,20 +135,20 @@ where
     /// # Returns
     ///
     /// A tuple containing the number of embeddings inserted and the dimension of the embeddings.
-    pub fn insert_documents<S: AsRef<str> + Send + Sync + Clone, Mod: DatabaseEmbeddingModel>(
+    pub fn insert_documents<Mod: DatabaseEmbeddingModel>(
         &mut self,
         model: &Mod,
-        documents: &[S],
+        documents: &[Bytes],
     ) -> Result<(usize, usize), Box<dyn Error>> {
         let new_embeddings: Vec<Embedding> = model.embed_documents(documents.to_vec())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
+        let mut document_map = HashMap::new();
         for (document, embedding) in documents.iter().zip(new_embeddings.iter()) {
             let embedding_index = self.hnsw.insert(embedding.clone(), &mut searcher);
-            let mut document_map = HashMap::new();
             document_map.insert(embedding_index, document.clone());
-            self.save_documents_to_disk(&mut document_map)?;
         }
+        self.save_documents_to_disk(&mut document_map)?;
         self.save_database()?;
         Ok(length_and_dimension)
     }
@@ -161,39 +161,31 @@ where
     ///
     /// * `documents` - A vector of documents to be queried.
     ///
-    /// * `number_of_results` - An optional positive integer less than or equal to `EF` specifying the number of query results to return.
+    /// * `number_of_results` - The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds.
     ///
     /// # Returns
     ///
     /// A vector of documents that are most similar to the queried documents.
-    pub fn query_documents<S: AsRef<str> + Send + Sync, Mod: DatabaseEmbeddingModel>(
+    pub fn query_documents<Mod: DatabaseEmbeddingModel>(
         &mut self,
         model: &Mod,
-        documents: Vec<S>,
-        number_of_results: Option<usize>,
+        documents: Vec<Bytes>,
+        number_of_results: usize,
     ) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
         if self.hnsw.is_empty() {
             return Ok(Vec::new());
         }
-        let number_of_results = match number_of_results {
-            None => 1,
-            Some(number_of_results) => std::cmp::min(number_of_results, EF),
-        };
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         let mut results = Vec::new();
-        // let model = TextEmbedding::try_new(InitOptions {
-        //     model_name: EmbeddingModel::BGESmallENV15,
-        //     show_download_progress: false,
-        //     ..Default::default()
-        // })?;
         let query_embeddings = model.embed_documents(documents)?;
         for query_embedding in query_embeddings.iter() {
-            let mut neighbours = [Neighbor {
-                index: !0,
-                distance: !0,
-            }; EF];
-            self.hnsw
-                .nearest(query_embedding, EF, &mut searcher, &mut neighbours);
+            let mut neighbours = Vec::new();
+            self.hnsw.nearest(
+                query_embedding,
+                number_of_results,
+                &mut searcher,
+                &mut neighbours,
+            );
             if neighbours.is_empty() {
                 return Ok(Vec::new());
             }
@@ -216,14 +208,14 @@ where
     /// # Arguments
     ///
     /// * `documents` - A map of document indices and their corresponding documents.
-    pub fn save_documents_to_disk<S: AsRef<str> + Send + Sync>(
+    pub fn save_documents_to_disk(
         &self,
-        documents: &mut HashMap<usize, S>,
+        documents: &mut HashMap<usize, Bytes>,
     ) -> Result<(), Box<dyn Error>> {
         let document_subdirectory = self.document_type.subdirectory_name();
         std::fs::create_dir_all(document_subdirectory)?;
         for document in documents {
-            let mut reader = BufReader::new(document.1.as_ref().as_bytes());
+            let mut reader = BufReader::new(document.1.as_ref());
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)

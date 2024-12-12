@@ -1,13 +1,25 @@
+use crate::image::load_image224;
+use bytes::Bytes;
 use candle_core::DType;
 use candle_core::Device;
 use candle_core::Tensor;
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
 use fastembed::{Embedding, EmbeddingModel, InitOptions, TextEmbedding};
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use sonogram::ColourGradient;
 use sonogram::FrequencyScale;
 use sonogram::SpecOptionsBuilder;
-use std::{error::Error, path::PathBuf};
+use std::error::Error;
+use std::io::Cursor;
+use symphonia::core::audio::Signal;
+use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::codecs::CODEC_TYPE_NULL;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
 
 /// A trait for embedding models that can be used with the database.
 pub trait DatabaseEmbeddingModel {
@@ -25,10 +37,7 @@ pub trait DatabaseEmbeddingModel {
     /// # Returns
     ///
     /// A vector of embeddings.
-    fn embed_documents<S: AsRef<str> + Send + Sync>(
-        &self,
-        documents: Vec<S>,
-    ) -> Result<Vec<Embedding>, Box<dyn Error>>;
+    fn embed_documents(&self, documents: Vec<Bytes>) -> Result<Vec<Embedding>, Box<dyn Error>>;
 
     /// Embed a single document.
     ///
@@ -39,7 +48,7 @@ pub trait DatabaseEmbeddingModel {
     /// # Returns
     ///
     /// An embedding vector.
-    fn embed<S: AsRef<str> + Send + Sync>(&self, document: S) -> Result<Embedding, Box<dyn Error>>;
+    fn embed(&self, document: Bytes) -> Result<Embedding, Box<dyn Error>>;
 }
 
 impl DatabaseEmbeddingModel for TextEmbedding {
@@ -48,15 +57,23 @@ impl DatabaseEmbeddingModel for TextEmbedding {
             InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(false),
         )?)
     }
-    fn embed_documents<S: AsRef<str> + Send + Sync>(
-        &self,
-        documents: Vec<S>,
-    ) -> Result<Vec<Embedding>, Box<dyn Error>> {
-        Ok(self.embed(documents, None)?)
+    fn embed_documents(&self, documents: Vec<Bytes>) -> Result<Vec<Embedding>, Box<dyn Error>> {
+        Ok(self.embed(
+            documents
+                .into_par_iter()
+                .map(|x| x.to_vec())
+                .filter_map(|x| String::from_utf8(x).ok())
+                .collect(),
+            None,
+        )?)
     }
 
-    fn embed<S: AsRef<str> + Send + Sync>(&self, document: S) -> Result<Embedding, Box<dyn Error>> {
-        let vec_with_document = vec![document];
+    fn embed(&self, document: Bytes) -> Result<Embedding, Box<dyn Error>> {
+        let vec_with_document = vec![document]
+            .into_par_iter()
+            .map(|x| x.to_vec())
+            .filter_map(|x| String::from_utf8(x).ok())
+            .collect();
         let vector_of_embeddings = self.embed(vec_with_document, None)?;
         Ok(vector_of_embeddings.first().unwrap().to_vec())
     }
@@ -69,10 +86,7 @@ impl DatabaseEmbeddingModel for ImageEmbeddingModel {
     fn new() -> Result<Self, Box<dyn Error>> {
         Ok(Self)
     }
-    fn embed_documents<S: AsRef<str> + Send + Sync>(
-        &self,
-        documents: Vec<S>,
-    ) -> Result<Vec<Embedding>, Box<dyn Error>> {
+    fn embed_documents(&self, documents: Vec<Bytes>) -> Result<Vec<Embedding>, Box<dyn Error>> {
         let mut result = Vec::new();
         let device = candle_examples::device(false)?;
         let api = hf_hub::api::sync::Api::new()?;
@@ -86,18 +100,16 @@ impl DatabaseEmbeddingModel for ImageEmbeddingModel {
             varbuilder.pp("vit").pp("embeddings"),
         )?;
         for document in documents {
-            let path = PathBuf::from(document.as_ref().to_string());
-            let image = candle_examples::imagenet::load_image224(path)?.to_device(&device)?;
+            let image = load_image224(document)?.to_device(&device)?;
             let embedding_tensors = model.forward(&image.unsqueeze(0)?, None, false)?;
             let embedding_vector = embedding_tensors.flatten_all()?.to_vec1::<f32>()?;
             result.push(embedding_vector);
         }
         Ok(result)
     }
-    fn embed<S: AsRef<str> + Send + Sync>(&self, document: S) -> Result<Embedding, Box<dyn Error>> {
+    fn embed(&self, document: Bytes) -> Result<Embedding, Box<dyn Error>> {
         let device = candle_examples::device(false)?;
-        let path = PathBuf::from(document.as_ref().to_string());
-        let image = candle_examples::imagenet::load_image224(path)?.to_device(&device)?;
+        let image = load_image224(document)?.to_device(&device)?;
         let api = hf_hub::api::sync::Api::new()?;
         let api = api.model("google/vit-base-patch16-224".into());
         let model_file = api.get("model.safetensors")?;
@@ -114,18 +126,75 @@ impl DatabaseEmbeddingModel for ImageEmbeddingModel {
 pub struct AudioEmbeddingModel;
 
 impl AudioEmbeddingModel {
-    /// Convert a waveform audio file into a logarithm-scale spectrogram for use with image embedding models.
+    /// Decodes the samples of an audio files.
     ///
     /// # Arguments
     ///
-    /// `path` - The path to the waveform audio file.
-    pub fn audio_to_image_tensor<S: AsRef<str> + Send + Sync>(
-        path: S,
-    ) -> Result<Tensor, Box<dyn Error>> {
-        let path = PathBuf::from(path.as_ref().to_string());
+    /// * `audio` - The raw bytes of an audio file.
+    ///
+    /// # Returns
+    ///
+    /// An `i16` vector of decoded samples, and the sample rate of the audio.
+    pub fn audio_to_data(audio: Bytes) -> Result<(Vec<i16>, u32), Box<dyn Error>> {
+        let mss = MediaSourceStream::new(Box::new(Cursor::new(audio)), Default::default());
+        let meta_opts: MetadataOptions = Default::default();
+        let fmt_opts: FormatOptions = Default::default();
+        let probed =
+            symphonia::default::get_probe().format(&Hint::new(), mss, &fmt_opts, &meta_opts)?;
+        let mut format = probed.format;
+        let track = format
+            .tracks()
+            .into_par_iter()
+            .find_any(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .unwrap();
+        let dec_opts: DecoderOptions = Default::default();
+        let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
+        let track_id = track.id;
+        let mut sample_rate = 0;
+        let mut data = Vec::new();
+
+        loop {
+            match format.next_packet() {
+                Ok(packet) => {
+                    while !format.metadata().is_latest() {
+                        format.metadata().pop();
+                    }
+                    if packet.track_id() != track_id {
+                        continue;
+                    }
+                    match decoder.decode(&packet) {
+                        Ok(decoded) => {
+                            let decoded = decoded.make_equivalent::<i16>();
+                            sample_rate = decoded.spec().rate;
+                            let number_channels = decoded.spec().channels.count();
+                            for i in 0..number_channels {
+                                let samples = decoded.chan(i);
+                                data.extend_from_slice(samples);
+                            }
+                        }
+                        Err(_) => continue,
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        Ok((data, sample_rate))
+    }
+
+    /// Convert an audio file into a logarithm-scale spectrogram for use with image embedding models.
+    ///
+    /// # Arguments
+    ///
+    /// `audio` - The raw bytes of an audio file.
+    ///
+    /// # Returns
+    ///
+    /// A spectrogram of the audio as an ImageNet-normalised tensor with shape [3 224 224].
+    pub fn audio_to_image_tensor(audio: Bytes) -> Result<Tensor, Box<dyn Error>> {
+        let (data, sample_rate) = Self::audio_to_data(audio)?;
         let mut spectrograph = SpecOptionsBuilder::new(512)
-            .load_data_from_file(&path)
-            .unwrap()
+            .load_data_from_memory(data, sample_rate)
             .normalise()
             .build()
             .unwrap();
@@ -151,10 +220,7 @@ impl DatabaseEmbeddingModel for AudioEmbeddingModel {
     fn new() -> Result<Self, Box<dyn Error>> {
         Ok(Self)
     }
-    fn embed_documents<S: AsRef<str> + Send + Sync>(
-        &self,
-        documents: Vec<S>,
-    ) -> Result<Vec<Embedding>, Box<dyn Error>> {
+    fn embed_documents(&self, documents: Vec<Bytes>) -> Result<Vec<Embedding>, Box<dyn Error>> {
         let mut result = Vec::new();
         let device = candle_examples::device(false)?;
         let api = hf_hub::api::sync::Api::new()?;
@@ -175,7 +241,7 @@ impl DatabaseEmbeddingModel for AudioEmbeddingModel {
         }
         Ok(result)
     }
-    fn embed<S: AsRef<str> + Send + Sync>(&self, document: S) -> Result<Embedding, Box<dyn Error>> {
+    fn embed(&self, document: Bytes) -> Result<Embedding, Box<dyn Error>> {
         let device = candle_examples::device(false)?;
         let image = AudioEmbeddingModel::audio_to_image_tensor(document)?.to_device(&device)?;
         let api = hf_hub::api::sync::Api::new()?;
