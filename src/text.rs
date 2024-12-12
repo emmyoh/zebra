@@ -17,7 +17,7 @@ pub type TextDatabase = Database<DefaultTextMetric, TEXT_EF_CONSTRUCTION, TEXT_M
 ///
 /// # Returns
 ///
-/// A database containing a HNSW graph and the inserted texts.
+/// A vector database for text.
 pub fn create_or_load_database() -> Result<TextDatabase, Box<dyn std::error::Error>> {
     TextDatabase::create_or_load_database(L2SquaredDistance, DocumentType::Text)
 }

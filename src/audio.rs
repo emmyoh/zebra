@@ -17,7 +17,7 @@ pub type AudioDatabase = Database<DefaultAudioMetric, AUDIO_EF_CONSTRUCTION, AUD
 ///
 /// # Returns
 ///
-/// A database containing a HNSW graph and the inserted sounds.
+/// A vector database for audio.
 pub fn create_or_load_database() -> Result<AudioDatabase, Box<dyn std::error::Error>> {
     AudioDatabase::create_or_load_database(CosineDistance, DocumentType::Audio)
 }

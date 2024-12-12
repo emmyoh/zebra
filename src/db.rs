@@ -5,6 +5,7 @@ use fastembed::Embedding;
 use hnsw::Params;
 use hnsw::{Hnsw, Searcher};
 use pcg_rand::Pcg64;
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use space::Metric;
 use std::collections::HashMap;
@@ -91,6 +92,8 @@ where
     ///
     /// * `metric` - The distance metric for the embeddings.
     ///
+    /// * `document_type` - The type of documents stored in the database.
+    ///
     /// # Returns
     ///
     /// A database containing a HNSW graph and the inserted documents.
@@ -138,19 +141,36 @@ where
     pub fn insert_documents<Mod: DatabaseEmbeddingModel>(
         &mut self,
         model: &Mod,
-        documents: &[Bytes],
+        documents: Vec<Bytes>,
     ) -> Result<(usize, usize), Box<dyn Error>> {
         let new_embeddings: Vec<Embedding> = model.embed_documents(documents.to_vec())?;
         let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
+        let records: Vec<_> = new_embeddings
+            .into_par_iter()
+            .zip(documents.into_par_iter())
+            .collect();
+        self.insert_records(records)?;
+        Ok(length_and_dimension)
+    }
+
+    /// Insert embedding-byte pairs into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `records` - A list of embeddings & the raw bytes they point to, presumably being the embedded documents.
+    pub fn insert_records(
+        &mut self,
+        records: Vec<(Embedding, Bytes)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut searcher: Searcher<DistanceUnit> = Searcher::default();
         let mut document_map = HashMap::new();
-        for (document, embedding) in documents.iter().zip(new_embeddings.iter()) {
+        for (embedding, document) in records {
             let embedding_index = self.hnsw.insert(embedding.clone(), &mut searcher);
             document_map.insert(embedding_index, document.clone());
         }
         self.save_documents_to_disk(&mut document_map)?;
         self.save_database()?;
-        Ok(length_and_dimension)
+        Ok(())
     }
 
     /// Query documents from the database.

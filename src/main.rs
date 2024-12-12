@@ -23,8 +23,6 @@ use zebra::db::DocumentType;
 use zebra::distance::DistanceUnit;
 use zebra::model::{AudioEmbeddingModel, DatabaseEmbeddingModel, ImageEmbeddingModel};
 
-const INSERT_BATCH_SIZE: usize = 100;
-
 #[derive(Parser)]
 #[command(version, about, long_about = None, arg_required_else_help(true))]
 struct Cli {
@@ -71,7 +69,11 @@ enum TextCommands {
         about = "Insert texts into the database from files on disk.",
         arg_required_else_help(true)
     )]
-    InsertFromFiles { file_paths: Vec<PathBuf> },
+    InsertFromFiles {
+        file_paths: Vec<PathBuf>,
+        #[arg(default_value_t = 100)]
+        batch_size: usize,
+    },
     #[command(about = "Query texts from the database.", arg_required_else_help(true))]
     Query {
         texts: Vec<String>,
@@ -88,7 +90,11 @@ enum ImageCommands {
         about = "Insert images into the database.",
         arg_required_else_help(true)
     )]
-    Insert { file_paths: Vec<PathBuf> },
+    Insert {
+        file_paths: Vec<PathBuf>,
+        #[arg(default_value_t = 100)]
+        batch_size: usize,
+    },
     #[command(
         about = "Query images from the database.",
         arg_required_else_help(true)
@@ -108,7 +114,11 @@ enum AudioCommands {
         about = "Insert sounds into the database.",
         arg_required_else_help(true)
     )]
-    Insert { file_paths: Vec<PathBuf> },
+    Insert {
+        file_paths: Vec<PathBuf>,
+        #[arg(default_value_t = 100)]
+        batch_size: usize,
+    },
     #[command(
         about = "Query sounds from the database.",
         arg_required_else_help(true)
@@ -133,7 +143,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
                 writeln!(buffer, "Inserting {} text(s).", texts.len())?;
                 let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
-                let insertion_results = db.insert_documents(&model, &texts_bytes)?;
+                let insertion_results = db.insert_documents(&model, texts_bytes)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -143,10 +153,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     pretty_duration(&sw.elapsed(), None)
                 )?;
             }
-            TextCommands::InsertFromFiles { file_paths } => {
+            TextCommands::InsertFromFiles {
+                file_paths,
+                batch_size,
+            } => {
                 let mut db = zebra::text::create_or_load_database()?;
                 let model: TextEmbedding = DatabaseEmbeddingModel::new()?;
-                insert_from_files(&mut db, model, file_paths)?;
+                insert_from_files(&mut db, model, file_paths, batch_size)?;
             }
             TextCommands::Query {
                 texts,
@@ -181,10 +194,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         },
         Commands::Image(image) => match image.image_commands {
-            ImageCommands::Insert { file_paths } => {
+            ImageCommands::Insert {
+                file_paths,
+                batch_size,
+            } => {
                 let mut db = zebra::image::create_or_load_database()?;
                 let model: ImageEmbeddingModel = DatabaseEmbeddingModel::new()?;
-                insert_from_files(&mut db, model, file_paths)?;
+                insert_from_files(&mut db, model, file_paths, batch_size)?;
             }
             ImageCommands::Query {
                 image_path,
@@ -230,10 +246,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         },
         Commands::Audio(audio) => match audio.audio_commands {
-            AudioCommands::Insert { file_paths } => {
+            AudioCommands::Insert {
+                file_paths,
+                batch_size,
+            } => {
                 let mut db = zebra::audio::create_or_load_database()?;
                 let model: AudioEmbeddingModel = DatabaseEmbeddingModel::new()?;
-                insert_from_files(&mut db, model, file_paths)?;
+                insert_from_files(&mut db, model, file_paths, batch_size)?;
             }
             AudioCommands::Query {
                 audio_path,
@@ -304,6 +323,7 @@ fn insert_from_files<
     db: &mut Database<Met, EF_CONSTRUCTION, M, M0>,
     model: impl DatabaseEmbeddingModel,
     file_paths: Vec<PathBuf>,
+    batch_size: usize,
 ) -> Result<(), Box<dyn Error>>
 where
     for<'de> Met: serde::Deserialize<'de>,
@@ -323,18 +343,18 @@ where
         .par_iter()
         .filter_map(|x| std::fs::read(x).ok().map(|y| y.into()))
         .collect();
-    // Insert documents in batches of INSERT_BATCH_SIZE.
-    for document_batch in documents.chunks(INSERT_BATCH_SIZE) {
+    // Insert documents in batches.
+    for document_batch in documents.chunks(batch_size) {
         let mut batch_sw = Stopwatch::start_new();
-        let insertion_results = db.insert_documents(&model, document_batch)?;
+        let insertion_results = db.insert_documents(&model, document_batch.to_vec())?;
         batch_sw.stop();
         progress_bar.println(format!(
             "{} embeddings of {} dimensions inserted into the database in {}.",
-            HumanCount(insertion_results.0.try_into()?).to_string(),
-            HumanCount(insertion_results.1.try_into()?).to_string(),
+            HumanCount(insertion_results.0 as u64).to_string(),
+            HumanCount(insertion_results.1 as u64).to_string(),
             pretty_duration(&batch_sw.elapsed(), None)
         ));
-        progress_bar.inc(INSERT_BATCH_SIZE.try_into()?);
+        progress_bar.inc(batch_size as u64);
         if progress_bar.is_hidden() {
             progress_bar.set_draw_target(ProgressDrawTarget::stderr_with_hz(100));
         }

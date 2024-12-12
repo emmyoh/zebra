@@ -23,7 +23,7 @@ pub type ImageDatabase = Database<DefaultImageMetric, IMAGE_EF_CONSTRUCTION, IMA
 ///
 /// # Returns
 ///
-/// A database containing a HNSW graph and the inserted images.
+/// A vector database for images.
 pub fn create_or_load_database() -> Result<ImageDatabase, Box<dyn std::error::Error>> {
     ImageDatabase::create_or_load_database(CosineDistance, DocumentType::Image)
 }
