@@ -1,5 +1,5 @@
 #![doc = include_str!("../README.md")]
-#![feature(doc_auto_cfg)]
+// #![feature(doc_auto_cfg)]
 #![warn(missing_docs)]
 
 /// A module for database operations regardless of data type.
