@@ -1,6 +1,4 @@
-use crate::database::core::Database;
-use crate::distance::CosineDistance;
-use crate::model::audio::VitBasePatch16_224;
+use crate::{database::core::Database, distance::CosineDistance, model::audio::VitBasePatch16_224};
 
 /// The default distance metric for audio embeddings.
 pub type DefaultAudioMetric = CosineDistance;
@@ -18,13 +16,8 @@ pub const DEFAULT_AUDIO_M: usize = 12;
 pub const DEFAULT_AUDIO_M0: usize = 24;
 
 /// A database containing sounds and their embeddings.
-pub type DefaultAudioDatabase = Database<
-    DefaultAudioMetric,
-    DefaultAudioModel,
-    DEFAULT_AUDIO_EF_CONSTRUCTION,
-    DEFAULT_AUDIO_M,
-    DEFAULT_AUDIO_M0,
->;
+pub type DefaultAudioDatabase =
+    Database<DefaultAudioMetric, DEFAULT_AUDIO_EF_CONSTRUCTION, DEFAULT_AUDIO_M, DEFAULT_AUDIO_M0>;
 
 /// Load the audio database from disk, or create it if it does not already exist.
 ///
@@ -32,5 +25,8 @@ pub type DefaultAudioDatabase = Database<
 ///
 /// A vector database for audio.
 pub fn create_or_load_database() -> Result<DefaultAudioDatabase, Box<dyn std::error::Error>> {
-    DefaultAudioDatabase::create_or_load_database(DefaultAudioMetric {}, DefaultAudioModel {})
+    DefaultAudioDatabase::create_or_load_database(
+        DefaultAudioMetric {},
+        DefaultAudioModel {}.into(),
+    )
 }

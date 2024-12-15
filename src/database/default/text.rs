@@ -1,6 +1,4 @@
-use crate::database::core::Database;
-use crate::distance::L2SquaredDistance;
-use crate::model::text::BGESmallEn1_5;
+use crate::{database::core::Database, distance::L2SquaredDistance, model::text::BGESmallEn1_5};
 
 /// The default distance metric for text embeddings.
 pub type DefaultTextMetric = L2SquaredDistance;
@@ -18,13 +16,8 @@ pub const DEFAULT_TEXT_M: usize = 12;
 pub const DEFAULT_TEXT_M0: usize = 24;
 
 /// A database containing texts and their embeddings.
-pub type DefaultTextDatabase = Database<
-    DefaultTextMetric,
-    DefaultTextModel,
-    DEFAULT_TEXT_EF_CONSTRUCTION,
-    DEFAULT_TEXT_M,
-    DEFAULT_TEXT_M0,
->;
+pub type DefaultTextDatabase =
+    Database<DefaultTextMetric, DEFAULT_TEXT_EF_CONSTRUCTION, DEFAULT_TEXT_M, DEFAULT_TEXT_M0>;
 
 /// Load the text database from disk, or create it if it does not already exist.
 ///
@@ -32,5 +25,5 @@ pub type DefaultTextDatabase = Database<
 ///
 /// A vector database for text.
 pub fn create_or_load_database() -> Result<DefaultTextDatabase, Box<dyn std::error::Error>> {
-    DefaultTextDatabase::create_or_load_database(DefaultTextMetric {}, DefaultTextModel {})
+    DefaultTextDatabase::create_or_load_database(DefaultTextMetric {}, DefaultTextModel {}.into())
 }

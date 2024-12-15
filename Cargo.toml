@@ -49,6 +49,7 @@ rayon = "1.10.0"
 bytes = { version = "1.9.0", features = ["serde"] }
 symphonia = "0.5.4"
 anyhow = "1.0.94"
+typetag = "0.2.18"
 
 [features]
 default = []

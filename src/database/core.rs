@@ -1,18 +1,18 @@
-use crate::distance::DistanceUnit;
-use crate::model::core::DatabaseEmbeddingModel;
+use crate::{distance::DistanceUnit, model::core::DatabaseEmbeddingModel};
 use bytes::Bytes;
 use fastembed::Embedding;
-use hnsw::Params;
-use hnsw::{Hnsw, Searcher};
+use hnsw::{Hnsw, Params, Searcher};
 use pcg_rand::Pcg64;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use space::Metric;
-use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::{self, BufReader, BufWriter};
-use std::usize;
-use std::{error::Error, fs};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::{self, OpenOptions},
+    io::{self, BufReader, BufWriter},
+    usize,
+};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 /// The type of document stored in the database.
@@ -60,8 +60,6 @@ impl DocumentType {
 ///
 /// * `Met` - The distance metric for the embeddings. Can be changed after database creation.
 ///
-/// * `Model` - The model used to generate embeddings. Should not be changed after database creation.
-///
 /// * `EF_CONSTRUCTION` - A parameter regarding insertion into the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Cannot be changed after database creation.
 ///
 /// * `M` - The number of bi-directional links created for each node in the HNSW graph. Cannot be changed after database creation. Increases memory usage and decreases retrieval speed with higher values.
@@ -69,7 +67,6 @@ impl DocumentType {
 /// * `M0` - The number of bi-directional links created for each node in the HNSW graph in the first layer. Cannot be changed after database creation.
 pub struct Database<
     Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
-    Model: DatabaseEmbeddingModel + Serialize,
     const EF_CONSTRUCTION: usize,
     const M: usize,
     const M0: usize,
@@ -77,19 +74,17 @@ pub struct Database<
     /// The Hierarchical Navigable Small World (HNSW) graph containing the embeddings.
     pub hnsw: Hnsw<Met, Embedding, Pcg64, M, M0>,
     /// The model used to generate embeddings. Should not be changed after database creation.
-    pub model: Model,
+    pub model: Box<dyn DatabaseEmbeddingModel>,
 }
 
 impl<
         Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
-        Model: DatabaseEmbeddingModel + Serialize,
         const EF_CONSTRUCTION: usize,
         const M: usize,
         const M0: usize,
-    > Database<Met, Model, EF_CONSTRUCTION, M, M0>
+    > Database<Met, EF_CONSTRUCTION, M, M0>
 where
     for<'de> Met: Deserialize<'de>,
-    for<'de> Model: Deserialize<'de>,
 {
     /// Load the database from disk, or create it if it does not already exist.
     ///
@@ -102,7 +97,10 @@ where
     /// # Returns
     ///
     /// A database containing a HNSW graph and the inserted documents.
-    pub fn create_or_load_database(metric: Met, model: Model) -> Result<Self, Box<dyn Error>> {
+    pub fn create_or_load_database(
+        metric: Met,
+        model: Box<dyn DatabaseEmbeddingModel>,
+    ) -> Result<Self, Box<dyn Error>> {
         let document_type = model.document_type();
         let db_bytes = fs::read(document_type.database_name());
         match db_bytes {

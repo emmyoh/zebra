@@ -1,6 +1,4 @@
-use crate::database::core::Database;
-use crate::distance::CosineDistance;
-use crate::model::image::VitBasePatch16_224;
+use crate::{database::core::Database, distance::CosineDistance, model::image::VitBasePatch16_224};
 
 /// The default distance metric for image embeddings.
 pub type DefaultImageMetric = CosineDistance;
@@ -18,13 +16,8 @@ pub const DEFAULT_IMAGE_M: usize = 12;
 pub const DEFAULT_IMAGE_M0: usize = 24;
 
 /// A database containing images and their embeddings.
-pub type DefaultImageDatabase = Database<
-    DefaultImageMetric,
-    DefaultImageModel,
-    DEFAULT_IMAGE_EF_CONSTRUCTION,
-    DEFAULT_IMAGE_M,
-    DEFAULT_IMAGE_M0,
->;
+pub type DefaultImageDatabase =
+    Database<DefaultImageMetric, DEFAULT_IMAGE_EF_CONSTRUCTION, DEFAULT_IMAGE_M, DEFAULT_IMAGE_M0>;
 
 /// Load the image database from disk, or create it if it does not already exist.
 ///
@@ -32,5 +25,8 @@ pub type DefaultImageDatabase = Database<
 ///
 /// A vector database for images.
 pub fn create_or_load_database() -> Result<DefaultImageDatabase, Box<dyn std::error::Error>> {
-    DefaultImageDatabase::create_or_load_database(DefaultImageMetric {}, DefaultImageModel {})
+    DefaultImageDatabase::create_or_load_database(
+        DefaultImageMetric {},
+        DefaultImageModel {}.into(),
+    )
 }

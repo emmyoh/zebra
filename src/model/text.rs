@@ -2,16 +2,15 @@ use super::core::DatabaseEmbeddingModel;
 use crate::database::core::DocumentType;
 use bytes::Bytes;
 use fastembed::{Embedding, EmbeddingModel, InitOptions, TextEmbedding};
-use rayon::iter::IntoParallelIterator;
-use rayon::iter::ParallelIterator;
-use serde::Deserialize;
-use serde::Serialize;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 /// A model for embedding images.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BGESmallEn1_5;
 
+#[typetag::serde]
 impl DatabaseEmbeddingModel for BGESmallEn1_5 {
     fn document_type(&self) -> DocumentType {
         DocumentType::Text

@@ -1,29 +1,23 @@
-use super::core::DatabaseEmbeddingModel;
-use super::image::ImageEmbeddingModel;
+use super::{core::DatabaseEmbeddingModel, image::ImageEmbeddingModel};
 use crate::database::core::DocumentType;
 use anyhow::anyhow;
 use bytes::Bytes;
-use candle_core::DType;
-use candle_core::Tensor;
+use candle_core::{DType, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
 use fastembed::Embedding;
-use rayon::iter::IntoParallelIterator;
-use rayon::iter::ParallelIterator;
-use serde::Deserialize;
-use serde::Serialize;
-use sonogram::ColourGradient;
-use sonogram::FrequencyScale;
-use sonogram::SpecOptionsBuilder;
-use std::error::Error;
-use std::io::Cursor;
-use symphonia::core::audio::Signal;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::codecs::CODEC_TYPE_NULL;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use serde::{Deserialize, Serialize};
+use sonogram::{ColourGradient, FrequencyScale, SpecOptionsBuilder};
+use std::{error::Error, io::Cursor};
+use symphonia::core::{
+    audio::Signal,
+    codecs::{DecoderOptions, CODEC_TYPE_NULL},
+    formats::FormatOptions,
+    io::MediaSourceStream,
+    meta::MetadataOptions,
+    probe::Hint,
+};
 
 /// A trait for audio embedding models; these models are a subset of image embedding models.
 pub trait AudioEmbeddingModel: ImageEmbeddingModel {
@@ -36,7 +30,7 @@ pub trait AudioEmbeddingModel: ImageEmbeddingModel {
     /// # Returns
     ///
     /// An `i16` vector of decoded samples, and the sample rate of the audio.
-    fn audio_to_data(audio: Bytes) -> Result<(Vec<i16>, u32), Box<dyn Error>> {
+    fn audio_to_data(&self, audio: Bytes) -> Result<(Vec<i16>, u32), Box<dyn Error>> {
         let mss = MediaSourceStream::new(Box::new(Cursor::new(audio)), Default::default());
         let meta_opts: MetadataOptions = Default::default();
         let fmt_opts: FormatOptions = Default::default();
@@ -93,7 +87,7 @@ pub trait AudioEmbeddingModel: ImageEmbeddingModel {
     ///
     /// A spectrogram of the audio as an ImageNet-normalised tensor with shape [3 224 224].
     fn audio_to_image_tensor224(&self, audio: Bytes) -> Result<Tensor, Box<dyn Error>> {
-        let (data, sample_rate) = Self::audio_to_data(audio)?;
+        let (data, sample_rate) = self.audio_to_data(audio)?;
         let mut spectrograph = SpecOptionsBuilder::new(512)
             .load_data_from_memory(data, sample_rate)
             .normalise()
@@ -114,6 +108,7 @@ pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 impl AudioEmbeddingModel for VitBasePatch16_224 {}
 
+#[typetag::serde]
 impl DatabaseEmbeddingModel for VitBasePatch16_224 {
     fn document_type(&self) -> DocumentType {
         DocumentType::Audio

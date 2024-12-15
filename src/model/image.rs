@@ -1,18 +1,14 @@
 use super::core::DatabaseEmbeddingModel;
 use crate::database::core::DocumentType;
 use bytes::Bytes;
-use candle_core::DType;
-use candle_core::Tensor;
-use candle_examples::imagenet::IMAGENET_MEAN;
-use candle_examples::imagenet::IMAGENET_STD;
+use candle_core::{DType, Tensor};
+use candle_examples::imagenet::{IMAGENET_MEAN, IMAGENET_STD};
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
 use fastembed::Embedding;
 use image::ImageReader;
-use serde::Deserialize;
-use serde::Serialize;
-use std::error::Error;
-use std::io::Cursor;
+use serde::{Deserialize, Serialize};
+use std::{error::Error, io::Cursor};
 
 /// A trait for image embedding models.
 pub trait ImageEmbeddingModel {
@@ -52,6 +48,7 @@ pub trait ImageEmbeddingModel {
 pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 
+#[typetag::serde]
 impl DatabaseEmbeddingModel for VitBasePatch16_224 {
     fn document_type(&self) -> DocumentType {
         DocumentType::Image

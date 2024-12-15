@@ -20,7 +20,6 @@ use ticky::Stopwatch;
 use zebra::database::core::Database;
 use zebra::database::core::DocumentType;
 use zebra::distance::DistanceUnit;
-use zebra::model::core::DatabaseEmbeddingModel;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None, arg_required_else_help(true))]
@@ -306,18 +305,16 @@ fn clear_database(document_type: DocumentType) -> Result<(), Box<dyn Error>> {
 
 fn insert_from_files<
     Met: Metric<Embedding, Unit = DistanceUnit> + serde::ser::Serialize,
-    Model: DatabaseEmbeddingModel + serde::ser::Serialize,
     const EF_CONSTRUCTION: usize,
     const M: usize,
     const M0: usize,
 >(
-    db: &mut Database<Met, Model, EF_CONSTRUCTION, M, M0>,
+    db: &mut Database<Met, EF_CONSTRUCTION, M, M0>,
     file_paths: Vec<PathBuf>,
     batch_size: usize,
 ) -> Result<(), Box<dyn Error>>
 where
     for<'de> Met: serde::Deserialize<'de>,
-    for<'de> Model: serde::Deserialize<'de>,
 {
     let mut sw = Stopwatch::start_new();
     let num_documents = file_paths.len();

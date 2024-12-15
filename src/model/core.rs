@@ -4,6 +4,7 @@ use fastembed::Embedding;
 use std::error::Error;
 
 /// A trait for embedding models that can be used with the database.
+#[typetag::serde(tag = "type")]
 pub trait DatabaseEmbeddingModel {
     /// The type of document that can be embedded by this model.
     ///
@@ -33,4 +34,13 @@ pub trait DatabaseEmbeddingModel {
     ///
     /// An embedding vector.
     fn embed(&self, document: Bytes) -> Result<Embedding, Box<dyn Error>>;
+}
+
+impl<'a, T: 'a> From<T> for Box<dyn DatabaseEmbeddingModel + 'a>
+where
+    T: DatabaseEmbeddingModel,
+{
+    fn from(v: T) -> Box<dyn DatabaseEmbeddingModel + 'a> {
+        Box::new(v)
+    }
 }
