@@ -50,6 +50,7 @@ bytes = { version = "1.9.0", features = ["serde"] }
 symphonia = "0.5.4"
 anyhow = "1.0.94"
 typetag = "0.2.18"
+filenamify = "0.1.2"
 
 [features]
 default = []

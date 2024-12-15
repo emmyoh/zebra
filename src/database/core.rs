@@ -25,31 +25,17 @@ pub enum DocumentType {
     Audio,
 }
 
-impl DocumentType {
-    /// Get the name of the subdirectory containing the documents of this type.
-    ///
-    /// # Returns
-    ///
-    /// The name of the subdirectory.
-    pub fn subdirectory_name(&self) -> &str {
-        match self {
-            DocumentType::Text => "texts",
-            DocumentType::Image => "images",
-            &DocumentType::Audio => "audio",
-        }
-    }
-
-    /// Get the name of the database file containing the documents of this type.
-    ///
-    /// # Returns
-    ///
-    /// The name of the database file.
-    pub fn database_name(&self) -> &str {
-        match self {
-            DocumentType::Text => "text.zebra",
-            DocumentType::Image => "image.zebra",
-            &DocumentType::Audio => "audio.zebra",
-        }
+impl std::fmt::Display for DocumentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                DocumentType::Text => "Text",
+                DocumentType::Image => "Image",
+                DocumentType::Audio => "Audio",
+            }
+        )
     }
 }
 
@@ -101,8 +87,8 @@ where
         metric: Met,
         model: Box<dyn DatabaseEmbeddingModel>,
     ) -> Result<Self, Box<dyn Error>> {
-        let document_type = model.document_type();
-        let db_bytes = fs::read(document_type.database_name());
+        let db_path = model.database_path();
+        let db_bytes = fs::read(db_path.clone());
         match db_bytes {
             Ok(bytes) => {
                 let db: Self = bincode::deserialize(&bytes)?;
@@ -112,7 +98,7 @@ where
                 let hnsw = Hnsw::new_params(metric, Params::new().ef_construction(EF_CONSTRUCTION));
                 let db = Database { hnsw, model };
                 let db_bytes = bincode::serialize(&db)?;
-                fs::write(document_type.database_name(), db_bytes)?;
+                fs::write(db_path, db_bytes)?;
                 Ok(db)
             }
         }
@@ -121,8 +107,14 @@ where
     /// Save the database to disk.
     pub fn save_database(&self) -> Result<(), Box<dyn Error>> {
         let db_bytes = bincode::serialize(&self)?;
-        fs::write(self.model.document_type().database_name(), db_bytes)?;
+        fs::write(self.model.database_path(), db_bytes)?;
         Ok(())
+    }
+
+    /// Delete the database.
+    pub fn clear_database(&self) {
+        let _ = std::fs::remove_file(self.model.database_path());
+        let _ = std::fs::remove_dir_all(self.model.database_subdirectory());
     }
 
     /// Insert documents into the database. Inserting too many documents at once may take too much time and memory.
@@ -224,9 +216,8 @@ where
         &self,
         documents: &mut HashMap<usize, Bytes>,
     ) -> Result<(), Box<dyn Error>> {
-        let document_type = self.model.document_type();
-        let document_subdirectory = document_type.subdirectory_name();
-        std::fs::create_dir_all(document_subdirectory)?;
+        let document_subdirectory = self.model.database_subdirectory();
+        std::fs::create_dir_all(document_subdirectory.clone())?;
         for document in documents {
             let mut reader = BufReader::new(document.1.as_ref());
             let file = OpenOptions::new()
@@ -255,8 +246,7 @@ where
         &self,
         documents: &mut Vec<usize>,
     ) -> Result<HashMap<usize, Vec<u8>>, Box<dyn Error>> {
-        let document_type = self.model.document_type();
-        let document_subdirectory = document_type.subdirectory_name();
+        let document_subdirectory = self.model.database_subdirectory();
         let mut results = HashMap::new();
         for document_index in documents {
             let file = OpenOptions::new()

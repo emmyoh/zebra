@@ -18,7 +18,6 @@ use std::io::{stdout, BufWriter};
 use std::path::PathBuf;
 use ticky::Stopwatch;
 use zebra::database::core::Database;
-use zebra::database::core::DocumentType;
 use zebra::distance::DistanceUnit;
 
 #[derive(Parser)]
@@ -185,7 +184,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             TextCommands::Clear => {
-                clear_database(DocumentType::Text)?;
+                clear_database(&mut zebra::database::default::text::create_or_load_database()?)?;
             }
         },
         Commands::Image(image) => match image.image_commands {
@@ -234,7 +233,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             ImageCommands::Clear => {
-                clear_database(DocumentType::Image)?;
+                clear_database(&mut zebra::database::default::image::create_or_load_database()?)?;
             }
         },
         Commands::Audio(audio) => match audio.audio_commands {
@@ -274,7 +273,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             AudioCommands::Clear => {
-                clear_database(DocumentType::Audio)?;
+                clear_database(&mut zebra::database::default::audio::create_or_load_database()?)?;
             }
         },
     }
@@ -285,15 +284,21 @@ fn progress_bar_style() -> Result<ProgressStyle, Box<dyn Error>> {
     Ok(ProgressStyle::with_template("[{elapsed} elapsed, {eta} remaining ({duration} total)] {wide_bar:.cyan/blue} {human_pos} of {human_len} ({percent}%) {msg}")?)
 }
 
-fn clear_database(document_type: DocumentType) -> Result<(), Box<dyn Error>> {
+fn clear_database<
+    Met: Metric<Embedding, Unit = DistanceUnit> + serde::ser::Serialize,
+    const EF_CONSTRUCTION: usize,
+    const M: usize,
+    const M0: usize,
+>(
+    db: &mut Database<Met, EF_CONSTRUCTION, M, M0>,
+) -> Result<(), Box<dyn Error>>
+where
+    for<'de> Met: serde::Deserialize<'de>,
+{
     let mut sw = Stopwatch::start_new();
     let mut buffer = BufWriter::new(stdout().lock());
     writeln!(buffer, "Clearing database.")?;
-    std::fs::remove_file(document_type.database_name()).unwrap_or(());
-    std::fs::remove_dir_all(document_type.subdirectory_name()).unwrap_or(());
-    if document_type == DocumentType::Text {
-        std::fs::remove_dir_all(".fastembed_cache").unwrap_or(());
-    }
+    db.clear_database();
     sw.stop();
     writeln!(
         buffer,
