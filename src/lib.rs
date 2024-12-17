@@ -8,3 +8,6 @@ pub mod database;
 pub mod distance;
 /// A module for embedding models.
 pub mod model;
+
+/// An embedding vector.
+pub type Embedding = Vec<f32>;

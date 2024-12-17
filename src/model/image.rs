@@ -1,11 +1,11 @@
 use super::core::DatabaseEmbeddingModel;
 use crate::database::core::DocumentType;
+use crate::Embedding;
 use bytes::Bytes;
 use candle_core::{DType, Tensor};
 use candle_examples::imagenet::{IMAGENET_MEAN, IMAGENET_STD};
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
-use fastembed::Embedding;
 use image::ImageReader;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, io::Cursor};
@@ -44,7 +44,7 @@ pub trait ImageEmbeddingModel {
 }
 
 /// A model for embedding images.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 /// A model for embedding images.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BGESmallEn1_5;
 
 #[typetag::serde]

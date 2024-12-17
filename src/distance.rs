@@ -1,8 +1,8 @@
+use crate::Embedding;
 use distances::vectors::{
     bray_curtis, canberra, chebyshev, cosine, euclidean, hamming, l3_norm, l4_norm, manhattan,
     minkowski, minkowski_p,
 };
-use fastembed::Embedding;
 use serde::{Deserialize, Serialize};
 use simsimd::SpatialSimilarity;
 use space::Metric;
@@ -10,7 +10,7 @@ use space::Metric;
 /// The data type representing the distance between two embeddings.
 pub type DistanceUnit = u64;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The cosine distance metric.
 pub struct CosineDistance;
 
@@ -22,7 +22,7 @@ impl Metric<Embedding> for CosineDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The L2-squared distance metric.
 pub struct L2SquaredDistance;
 
@@ -35,7 +35,7 @@ impl Metric<Embedding> for L2SquaredDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The Chebyshev distance metric.
 pub struct ChebyshevDistance;
 
@@ -47,7 +47,7 @@ impl Metric<Embedding> for ChebyshevDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The Canberra distance metric.
 pub struct CanberraDistance;
 
@@ -59,7 +59,7 @@ impl Metric<Embedding> for CanberraDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The Bray-Curtis distance metric.
 pub struct BrayCurtisDistance;
 
@@ -71,7 +71,7 @@ impl Metric<Embedding> for BrayCurtisDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The Manhattan distance metric.
 pub struct ManhattanDistance;
 
@@ -83,7 +83,7 @@ impl Metric<Embedding> for ManhattanDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The L2 distance metric.
 pub struct L2Distance;
 
@@ -95,7 +95,7 @@ impl Metric<Embedding> for L2Distance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The L3 distance metric.
 pub struct L3Distance;
 
@@ -107,7 +107,7 @@ impl Metric<Embedding> for L3Distance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The L4 distance metric.
 pub struct L4Distance;
 
@@ -119,7 +119,7 @@ impl Metric<Embedding> for L4Distance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The Hamming distance metric.
 pub struct HammingDistance;
 
@@ -133,7 +133,7 @@ impl Metric<Embedding> for HammingDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The Minkowski distance metric.
 pub struct MinkowskiDistance {
     /// The power of the Minkowski distance.
@@ -149,7 +149,7 @@ impl Metric<Embedding> for MinkowskiDistance {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The p-norm distance metric.
 pub struct PNormDistance {
     /// The power of the distance metric.

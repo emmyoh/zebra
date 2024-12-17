@@ -1,11 +1,11 @@
 use super::{core::DatabaseEmbeddingModel, image::ImageEmbeddingModel};
 use crate::database::core::DocumentType;
+use crate::Embedding;
 use anyhow::anyhow;
 use bytes::Bytes;
 use candle_core::{DType, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
-use fastembed::Embedding;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use sonogram::{ColourGradient, FrequencyScale, SpecOptionsBuilder};
@@ -103,7 +103,7 @@ pub trait AudioEmbeddingModel: ImageEmbeddingModel {
 }
 
 /// A model for embedding audio.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 impl AudioEmbeddingModel for VitBasePatch16_224 {}

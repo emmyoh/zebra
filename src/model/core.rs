@@ -1,29 +1,11 @@
 use crate::database::core::DocumentType;
+use crate::Embedding;
 use bytes::Bytes;
-use fastembed::Embedding;
 use std::error::Error;
 
 /// A trait for embedding models that can be used with the database.
 #[typetag::serde(tag = "type")]
 pub trait DatabaseEmbeddingModel {
-    /// Retrieve the path to the database file.
-    ///
-    /// # Returns
-    ///
-    /// The path to the database file.
-    fn database_path(&self) -> String {
-        format!("{}.zebra", self.database_subdirectory())
-    }
-
-    /// Retrieve the path to the database document directory.
-    ///
-    /// # Returns
-    ///
-    /// The path to the database document directory.
-    fn database_subdirectory(&self) -> String {
-        filenamify::filenamify(format!("{}_{}", self.document_type(), self.typetag_name()))
-    }
-
     /// The type of document that can be embedded by this model.
     ///
     /// # Returns

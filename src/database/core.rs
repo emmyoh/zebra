@@ -1,6 +1,6 @@
+use crate::Embedding;
 use crate::{distance::DistanceUnit, model::core::DatabaseEmbeddingModel};
 use bytes::Bytes;
-use fastembed::Embedding;
 use hnsw::{Hnsw, Params, Searcher};
 use pcg_rand::Pcg64;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -11,8 +11,45 @@ use std::{
     error::Error,
     fs::{self, OpenOptions},
     io::{self, BufReader, BufWriter},
-    usize,
 };
+
+/// Retrieve the path to the database file.
+///
+/// # Returns
+///
+/// The path to the database file.
+fn database_path(
+    ef_construction: usize,
+    m: usize,
+    m0: usize,
+    model: &impl DatabaseEmbeddingModel,
+) -> String {
+    format!(
+        "{}.zebra",
+        database_subdirectory(ef_construction, m, m0, model)
+    )
+}
+
+/// Retrieve the path to the database document directory.
+///
+/// # Returns
+///
+/// The path to the database document directory.
+fn database_subdirectory(
+    ef_construction: usize,
+    m: usize,
+    m0: usize,
+    model: &impl DatabaseEmbeddingModel,
+) -> String {
+    filenamify::filenamify(format!(
+        "{}_{}_{}_{}_{}",
+        ef_construction,
+        m,
+        m0,
+        model.document_type(),
+        model.typetag_name()
+    ))
+}
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 /// The type of document stored in the database.
@@ -46,13 +83,16 @@ impl std::fmt::Display for DocumentType {
 ///
 /// * `Met` - The distance metric for the embeddings. Can be changed after database creation.
 ///
+/// * `Mod` - The model used to generate embeddings. Should not be changed after database creation.
+///
 /// * `EF_CONSTRUCTION` - A parameter regarding insertion into the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds. Cannot be changed after database creation.
 ///
 /// * `M` - The number of bi-directional links created for each node in the HNSW graph. Cannot be changed after database creation. Increases memory usage and decreases retrieval speed with higher values.
 ///
 /// * `M0` - The number of bi-directional links created for each node in the HNSW graph in the first layer. Cannot be changed after database creation.
 pub struct Database<
-    Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
+    Met: Metric<Embedding, Unit = DistanceUnit> + Default + Serialize,
+    Mod: DatabaseEmbeddingModel + Default + Serialize,
     const EF_CONSTRUCTION: usize,
     const M: usize,
     const M0: usize,
@@ -60,61 +100,75 @@ pub struct Database<
     /// The Hierarchical Navigable Small World (HNSW) graph containing the embeddings.
     pub hnsw: Hnsw<Met, Embedding, Pcg64, M, M0>,
     /// The model used to generate embeddings. Should not be changed after database creation.
-    pub model: Box<dyn DatabaseEmbeddingModel>,
+    pub model: Mod,
 }
 
 impl<
-        Met: Metric<Embedding, Unit = DistanceUnit> + Serialize,
+        Met: Metric<Embedding, Unit = DistanceUnit> + Default + Serialize,
+        Mod: DatabaseEmbeddingModel + Default + Serialize,
         const EF_CONSTRUCTION: usize,
         const M: usize,
         const M0: usize,
-    > Database<Met, EF_CONSTRUCTION, M, M0>
+    > Database<Met, Mod, EF_CONSTRUCTION, M, M0>
 where
     for<'de> Met: Deserialize<'de>,
+    for<'de> Mod: Deserialize<'de>,
 {
-    /// Load the database from disk, or create it if it does not already exist.
-    ///
-    /// # Arguments
-    ///
-    /// * `metric` - The distance metric for the embeddings. Can be changed after database creation.
-    ///
-    /// * `model` - The model used to generate embeddings. Should not be changed after database creation.
+    fn database_subdirectory(&self) -> String {
+        database_subdirectory(EF_CONSTRUCTION, M, M0, &Mod::default())
+    }
+
+    fn database_path(&self) -> String {
+        database_path(EF_CONSTRUCTION, M, M0, &Mod::default())
+    }
+
+    /// Load the database from disk.
     ///
     /// # Returns
     ///
-    /// A database containing a HNSW graph and the inserted documents.
-    pub fn create_or_load_database(
-        metric: Met,
-        model: Box<dyn DatabaseEmbeddingModel>,
-    ) -> Result<Self, Box<dyn Error>> {
-        let db_path = model.database_path();
-        let db_bytes = fs::read(db_path.clone());
-        match db_bytes {
-            Ok(bytes) => {
-                let db: Self = bincode::deserialize(&bytes)?;
-                Ok(db)
-            }
-            Err(_) => {
-                let hnsw = Hnsw::new_params(metric, Params::new().ef_construction(EF_CONSTRUCTION));
-                let db = Database { hnsw, model };
-                let db_bytes = bincode::serialize(&db)?;
-                fs::write(db_path, db_bytes)?;
-                Ok(db)
-            }
+    /// A database containing a HNSW graph and inserted documents.
+    pub fn load() -> Result<Self, Box<dyn Error>> {
+        let db_path = database_path(EF_CONSTRUCTION, M, M0, &Mod::default());
+        let db_bytes = fs::read(db_path.clone())?;
+        Ok(bincode::deserialize(&db_bytes)?)
+    }
+
+    /// Create a database in memory.
+    ///
+    /// # Returns
+    ///
+    /// A Zebra database.
+    pub fn new() -> Self {
+        let hnsw = Hnsw::new_params(
+            Met::default(),
+            Params::new().ef_construction(EF_CONSTRUCTION),
+        );
+        Self {
+            hnsw,
+            model: Mod::default(),
         }
+    }
+
+    /// Load the database from disk, or create it if it does not already exist.
+    ///
+    /// # Returns
+    ///
+    /// A database containing a HNSW graph and inserted documents.
+    pub fn create_or_load_database() -> Self {
+        Self::load().unwrap_or(Self::new())
     }
 
     /// Save the database to disk.
     pub fn save_database(&self) -> Result<(), Box<dyn Error>> {
         let db_bytes = bincode::serialize(&self)?;
-        fs::write(self.model.database_path(), db_bytes)?;
+        fs::write(self.database_path(), db_bytes)?;
         Ok(())
     }
 
     /// Delete the database.
     pub fn clear_database(&self) {
-        let _ = std::fs::remove_file(self.model.database_path());
-        let _ = std::fs::remove_dir_all(self.model.database_subdirectory());
+        let _ = std::fs::remove_file(self.database_path());
+        let _ = std::fs::remove_dir_all(self.database_subdirectory());
     }
 
     /// Insert documents into the database. Inserting too many documents at once may take too much time and memory.
@@ -216,7 +270,7 @@ where
         &self,
         documents: &mut HashMap<usize, Bytes>,
     ) -> Result<(), Box<dyn Error>> {
-        let document_subdirectory = self.model.database_subdirectory();
+        let document_subdirectory = self.database_subdirectory();
         std::fs::create_dir_all(document_subdirectory.clone())?;
         for document in documents {
             let mut reader = BufReader::new(document.1.as_ref());
@@ -246,7 +300,7 @@ where
         &self,
         documents: &mut Vec<usize>,
     ) -> Result<HashMap<usize, Vec<u8>>, Box<dyn Error>> {
-        let document_subdirectory = self.model.database_subdirectory();
+        let document_subdirectory = self.database_subdirectory();
         let mut results = HashMap::new();
         for document_index in documents {
             let file = OpenOptions::new()
