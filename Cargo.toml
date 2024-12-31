@@ -51,6 +51,13 @@ symphonia = "0.5.4"
 anyhow = "1.0.94"
 typetag = "0.2.18"
 filenamify = "0.1.2"
+hamming-bitwise-fast = "1.0.0"
+serde_with = "3.12.0"
+dashmap = { version = "6.1.0", features = ["serde", "rayon", "inline"] }
+rand = "0.8.5"
+fjall = "2.4.4"
+bitcode = "0.6.3"
+uuid = { version = "1.11.0", features = ["fast-rng", "v7"] }
 
 [features]
 default = []

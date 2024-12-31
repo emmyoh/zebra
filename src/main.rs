@@ -29,6 +29,8 @@ use zebra::Embedding;
 struct Cli {
     #[structopt(subcommand)]
     commands: Commands,
+    #[arg(short, long, global = true)]
+    database_path: String,
 }
 
 #[derive(Subcommand)]
@@ -133,13 +135,13 @@ enum AudioCommands {
     Clear,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.commands {
         Commands::Text(text) => match text.text_commands {
             TextCommands::Insert { texts } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = DefaultTextDatabase::create_or_load_database();
+                let mut db = DefaultTextDatabase::open_or_create(&cli.database_path);
                 let mut buffer = BufWriter::new(stdout().lock());
                 writeln!(buffer, "Inserting {} text(s).", texts.len())?;
                 let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
@@ -157,7 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 file_paths,
                 batch_size,
             } => {
-                let mut db = DefaultTextDatabase::create_or_load_database();
+                let mut db = DefaultTextDatabase::open_or_create(&cli.database_path);
                 insert_from_files(&mut db, file_paths, batch_size)?;
             }
             TextCommands::Query {
@@ -165,7 +167,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = DefaultTextDatabase::create_or_load_database();
+                let mut db = DefaultTextDatabase::open_or_create(&cli.database_path);
                 let mut buffer = BufWriter::new(stdout().lock());
                 let num_texts = texts.len();
                 writeln!(buffer, "Querying {} text(s).", num_texts)?;
@@ -188,7 +190,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             TextCommands::Clear => {
-                clear_database(&mut DefaultTextDatabase::create_or_load_database())?;
+                DefaultTextDatabase::open_or_create(&cli.database_path).clear_database();
             }
         },
         Commands::Image(image) => match image.image_commands {
@@ -196,7 +198,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 file_paths,
                 batch_size,
             } => {
-                let mut db = DefaultImageDatabase::create_or_load_database();
+                let mut db = DefaultImageDatabase::open_or_create(&cli.database_path);
                 insert_from_files(&mut db, file_paths, batch_size)?;
             }
             ImageCommands::Query {
@@ -204,7 +206,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = DefaultImageDatabase::create_or_load_database();
+                let mut db = DefaultImageDatabase::open_or_create(&cli.database_path);
                 let mut buffer = BufWriter::new(stdout().lock());
                 let image_print_config = viuer::Config {
                     transparent: true,
@@ -237,7 +239,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             ImageCommands::Clear => {
-                clear_database(&mut DefaultImageDatabase::create_or_load_database())?;
+                DefaultImageDatabase::open_or_create(&cli.database_path).clear_database();
             }
         },
         Commands::Audio(audio) => match audio.audio_commands {
@@ -245,7 +247,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 file_paths,
                 batch_size,
             } => {
-                let mut db = DefaultAudioDatabase::create_or_load_database();
+                let mut db = DefaultAudioDatabase::open_or_create(&cli.database_path);
                 insert_from_files(&mut db, file_paths, batch_size)?;
             }
             AudioCommands::Query {
@@ -253,7 +255,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let mut db = DefaultAudioDatabase::create_or_load_database();
+                let mut db = DefaultAudioDatabase::open_or_create(&cli.database_path);
                 let (_stream, stream_handle) = OutputStream::try_default()?;
                 let sink = Sink::try_new(&stream_handle)?;
                 let mut buffer = BufWriter::new(stdout().lock());
@@ -277,41 +279,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             AudioCommands::Clear => {
-                clear_database(&mut DefaultAudioDatabase::create_or_load_database())?;
+                DefaultAudioDatabase::open_or_create(&cli.database_path).clear_database();
             }
         },
     }
     Ok(())
 }
 
-fn progress_bar_style() -> Result<ProgressStyle, Box<dyn Error>> {
+fn progress_bar_style() -> anyhow::Result<ProgressStyle> {
     Ok(ProgressStyle::with_template("[{elapsed} elapsed, {eta} remaining ({duration} total)] {wide_bar:.cyan/blue} {human_pos} of {human_len} ({percent}%) {msg}")?)
-}
-
-fn clear_database<
-    Met: Metric<Embedding, Unit = DistanceUnit> + Default + serde::ser::Serialize,
-    Mod: DatabaseEmbeddingModel + Default + serde::ser::Serialize,
-    const EF_CONSTRUCTION: usize,
-    const M: usize,
-    const M0: usize,
->(
-    db: &mut Database<Met, Mod, EF_CONSTRUCTION, M, M0>,
-) -> Result<(), Box<dyn Error>>
-where
-    for<'de> Met: serde::Deserialize<'de>,
-    for<'de> Mod: serde::Deserialize<'de>,
-{
-    let mut sw = Stopwatch::start_new();
-    let mut buffer = BufWriter::new(stdout().lock());
-    writeln!(buffer, "Clearing database.")?;
-    db.clear_database();
-    sw.stop();
-    writeln!(
-        buffer,
-        "Database cleared in {}.",
-        pretty_duration(&sw.elapsed(), None)
-    )?;
-    Ok(())
 }
 
 fn insert_from_files<
@@ -324,7 +300,7 @@ fn insert_from_files<
     db: &mut Database<Met, Mod, EF_CONSTRUCTION, M, M0>,
     file_paths: Vec<PathBuf>,
     batch_size: usize,
-) -> Result<(), Box<dyn Error>>
+) -> anyhow::Result<()>
 where
     for<'de> Met: serde::Deserialize<'de>,
     for<'de> Mod: serde::Deserialize<'de>,

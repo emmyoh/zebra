@@ -1,12 +1,14 @@
-use super::core::DatabaseEmbeddingModel;
-use crate::database::core::DocumentType;
+use super::core::{DatabaseEmbeddingModel, DIM_VIT_BASE_PATCH16_224};
 use crate::Embedding;
+use bitcode::{Decode, Encode};
 use bytes::Bytes;
 use candle_core::{DType, Tensor};
 use candle_examples::imagenet::{IMAGENET_MEAN, IMAGENET_STD};
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
+use dashmap::DashSet;
 use image::ImageReader;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, io::Cursor};
 
@@ -21,7 +23,7 @@ pub trait ImageEmbeddingModel {
     /// # Returns
     ///
     /// A tensor with the shape [3 224 224]; ImageNet normalisation is applied.
-    fn load_image224(&self, bytes: Bytes) -> Result<Tensor, Box<dyn Error>> {
+    fn load_image224(&self, bytes: &Bytes) -> anyhow::Result<Tensor> {
         let res = 224_usize;
         let img = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()?
@@ -44,16 +46,15 @@ pub trait ImageEmbeddingModel {
 }
 
 /// A model for embedding images.
-#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Encode, Decode, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 
-#[typetag::serde]
-impl DatabaseEmbeddingModel for VitBasePatch16_224 {
-    fn document_type(&self) -> DocumentType {
-        DocumentType::Image
-    }
-    fn embed_documents(&self, documents: Vec<Bytes>) -> Result<Vec<Embedding>, Box<dyn Error>> {
+impl DatabaseEmbeddingModel<DIM_VIT_BASE_PATCH16_224> for VitBasePatch16_224 {
+    fn embed_documents(
+        &self,
+        documents: &Vec<Bytes>,
+    ) -> anyhow::Result<Vec<Embedding<DIM_VIT_BASE_PATCH16_224>>> {
         let mut result = Vec::new();
         let device = candle_examples::device(false)?;
         let api = hf_hub::api::sync::Api::new()?;
@@ -72,19 +73,9 @@ impl DatabaseEmbeddingModel for VitBasePatch16_224 {
             let embedding_vector = embedding_tensors.flatten_all()?.to_vec1::<f32>()?;
             result.push(embedding_vector);
         }
-        Ok(result)
-    }
-    fn embed(&self, document: Bytes) -> Result<Embedding, Box<dyn Error>> {
-        let device = candle_examples::device(false)?;
-        let image = self.load_image224(document)?.to_device(&device)?;
-        let api = hf_hub::api::sync::Api::new()?;
-        let api = api.model("google/vit-base-patch16-224".into());
-        let model_file = api.get("model.safetensors")?;
-        let varbuilder =
-            unsafe { VarBuilder::from_mmaped_safetensors(&[model_file], DType::F32, &device)? };
-        let model = vit::Embeddings::new(&vit::Config::vit_base_patch16_224(), false, varbuilder)?;
-        let embedding_tensors = model.forward(&image.unsqueeze(0)?, None, false)?;
-        let embedding_vector = embedding_tensors.to_vec1::<f32>()?;
-        Ok(embedding_vector)
+        Ok(result
+            .into_par_iter()
+            .map(|x| x.try_into().unwrap_or([0.0; DIM_VIT_BASE_PATCH16_224]))
+            .collect())
     }
 }
