@@ -19,7 +19,7 @@ jobs:
       - name: Checkout codebase
         uses: actions/checkout@v4
       - name: Generate documentation
-        run: time cargo doc --no-deps -Zrustdoc-map --release --quiet
+        run: time cargo doc --features="default_db" --no-deps -Zrustdoc-map --release --quiet
       - name: Fix permissions
         run: |
           chmod -c -R +rX "target/doc/" | while read line; do
