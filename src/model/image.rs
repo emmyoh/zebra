@@ -6,11 +6,9 @@ use candle_core::{DType, Tensor};
 use candle_examples::imagenet::{IMAGENET_MEAN, IMAGENET_STD};
 use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
-use dashmap::DashSet;
 use image::ImageReader;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use serde::{Deserialize, Serialize};
-use std::{error::Error, io::Cursor};
+use std::io::Cursor;
 
 /// A trait for image embedding models.
 pub trait ImageEmbeddingModel {

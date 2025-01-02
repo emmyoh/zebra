@@ -4,8 +4,6 @@ use bitcode::{Decode, Encode};
 use bytes::Bytes;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use serde::{Deserialize, Serialize};
-use std::error::Error;
 
 /// A model for embedding text.
 #[derive(Default, Encode, Decode, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

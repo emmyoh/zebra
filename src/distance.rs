@@ -4,7 +4,6 @@ use distances::vectors::{
     bray_curtis, canberra, chebyshev, cosine, euclidean, euclidean_sq, hamming, l3_norm, l4_norm,
     manhattan, minkowski, minkowski_p,
 };
-use serde::{Deserialize, Serialize};
 use simsimd::SpatialSimilarity;
 use space::Metric;
 

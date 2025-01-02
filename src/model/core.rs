@@ -1,12 +1,11 @@
 use crate::Embedding;
-use bitcode::{DecodeOwned, Encode};
+use bitcode::Encode;
 use bytes::Bytes;
-use dashmap::DashSet;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::error::Error;
 
+/// Dimensionality of embeddings produced by the [crate::model::text::BGESmallEn1_5] model.
 pub const DIM_BGESMALL_EN_1_5: usize = 384;
+
+/// Dimensionality of embeddings produced by the [crate::model::image::VitBasePatch16_224] model.
 pub const DIM_VIT_BASE_PATCH16_224: usize = 768;
 
 /// A trait for embedding models that can be used with the database.

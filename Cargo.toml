@@ -22,15 +22,10 @@ required-features = ["cli"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bincode = "1.3.3"
 clap = { version = "4.5.23", features = ["derive"], optional = true }
 fastembed = "4.3.0"
-hnsw = { version = "0.11.0", features = ["serde1"] }
-ordered-float = "4.5.0"
-pcg_rand = { version = "0.13.0", features = ["serde1"] }
-serde = "1.0.216"
-simsimd = "6.2.1"
-space = "0.17.0"
+simsimd = "6.2.3"
+space = "0.18.0"
 lz4_flex = { version = "0.11.3", default-features = false, features = ["frame"] }
 ticky = { version = "1.0.2", optional = true }
 pretty-duration = { version = "0.1.1", optional = true }
@@ -41,19 +36,16 @@ candle-core = "0.8.1"
 candle-nn = "0.8.1"
 candle-transformers = "0.8.1"
 hf-hub = "0.3.2"
-viuer = { version = "0.9.1", features = ["print-file"], optional = true }
+viuer = { version = "0.9.1", optional = true }
 sonogram = "0.7.1"
 image = "0.25.5"
 rodio = { version = "0.20.1", optional = true }
 rayon = "1.10.0"
-bytes = { version = "1.9.0", features = ["serde"] }
+bytes = { version = "1.9.0" }
 symphonia = "0.5.4"
-anyhow = "1.0.94"
-typetag = "0.2.18"
-filenamify = "0.1.2"
+anyhow = "1.0.95"
 hamming-bitwise-fast = "1.0.0"
-serde_with = "3.12.0"
-dashmap = { version = "6.1.0", features = ["serde", "rayon", "inline"] }
+dashmap = { version = "6.1.0", features = ["rayon", "inline"] }
 rand = "0.8.5"
 fjall = "2.4.4"
 bitcode = "0.6.3"

@@ -1,4 +1,4 @@
-use crate::index::lsh::ANNIndex;
+use super::index::lsh::LSHIndex;
 use crate::Embedding;
 use crate::{distance::DistanceUnit, model::core::DatabaseEmbeddingModel};
 use bitcode::{Decode, Encode};
@@ -8,11 +8,9 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator};
 use rayon::slice::ParallelSliceMut;
-use serde::{Deserialize, Serialize};
 use space::Metric;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::{
-    error::Error,
     fs::{self, OpenOptions},
     io::{self, BufReader, BufWriter},
 };
@@ -23,19 +21,20 @@ use uuid::Uuid;
 ///
 /// # Arguments
 ///
-/// * `Met` - The distance metric for the embeddings. Can be changed after database creation.
+/// * `N` - The dimensionality of the vectors in the database.
 ///
-/// * `Mod` - The model used to generate embeddings. Should not be changed after database creation.
+/// * `Met` - The distance metric for the embeddings.
+///
+/// * `Mod` - The model used to generate embeddings.
 pub struct Database<
     const N: usize,
     Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Encode + Send + Sync,
     Mod: DatabaseEmbeddingModel<N> + Default + Encode + Send + Sync,
 > {
     uuid: [u8; 16],
-    /// The model used to generate embeddings. Should not be changed after database creation.
-    pub model: Mod,
-    pub metric: Met,
-    index: ANNIndex<N>,
+    model: Mod,
+    metric: Met,
+    index: LSHIndex<N>,
     path: String,
 }
 
@@ -58,9 +57,13 @@ where
 
     /// Load the database from disk.
     ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the database file.
+    ///
     /// # Returns
     ///
-    /// A database containing embeddings & documents.
+    /// A [Database] containing embeddings & documents.
     pub fn open(path: &String) -> anyhow::Result<Self> {
         let db_bytes = fs::read(path)?;
         let mut db: Self = bitcode::decode(&db_bytes)?;
@@ -68,43 +71,57 @@ where
         Ok(db)
     }
 
-    /// Create a database in memory.
+    /// Create a database in memory.\
+    /// Note: All database operations require read & write access to storage; a database cannot be used only in memory.
     ///
     /// # Returns
     ///
-    /// A Zebra database.
+    /// A new [Database].
     pub fn new() -> Self {
-        Self {
+        let mut new = Self {
             uuid: Uuid::now_v7().into_bytes(),
             model: Mod::default(),
             metric: Met::default(),
-            index: ANNIndex::build_index(15),
+            index: LSHIndex::build_index(15),
             path: String::new(),
-        }
+        };
+        new.path = new.default_database_path();
+        new
     }
 
     /// Load the database from disk, or create it if it does not already exist.
     ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the database file.
+    ///
     /// # Returns
     ///
-    /// A database containing embeddings & documents.
+    /// A [Database] containing embeddings & documents.
     pub fn open_or_create(path: &String) -> Self {
         Self::open(path).unwrap_or(Self::new())
     }
 
     /// Save the database to disk.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - An optional path to save the database to; if left blank, will use the path the database was opened from.
     pub fn save_database(&self, path: Option<&String>) -> anyhow::Result<()> {
         fs::write(path.unwrap_or(&self.path), bitcode::encode(self))?;
         Ok(())
     }
 
-    /// Delete the database.
+    /// Delete the database and its contents, including all vectors and documents.\
+    /// Note: This deletes the file at the path the database was opened from; if the database file was moved after opening, this may have unintended consequences.
     pub fn clear_database(&self) {
-        let _ = std::fs::remove_file(self.default_database_path());
+        let _ = self.index.clear();
+        let _ = std::fs::remove_file(&self.path);
         let _ = std::fs::remove_dir_all(self.database_subdirectory());
     }
 
-    /// Insert documents into the database. Inserting too many documents at once may take too much time and memory.
+    /// Insert documents into the database.\
+    /// Consider batching insertions as inserting too many documents at once may be memory-intensive.
     ///
     /// # Arguments
     ///
@@ -120,11 +137,14 @@ where
         Ok(length_and_dimension)
     }
 
-    /// Insert embedding-byte pairs into the database.
+    /// Insert embedding-byte pairs into the database.\
+    /// Consider batching insertions as inserting too many records at once may be memory-intensive.
     ///
     /// # Arguments
     ///
-    /// * `records` - A list of embeddings & the raw bytes they point to, presumably being the embedded documents.
+    /// * `embeddings` - A list of embedding vectors to insert.
+    ///
+    /// * `documents` - A list of documents to pair with the embedding vectors.
     pub fn insert_records(
         &self,
         embeddings: &Vec<Embedding<N>>,
@@ -136,45 +156,72 @@ where
         Ok(())
     }
 
-    /// Query documents from the database.
+    /// Query records from the database.
     ///
     /// # Arguments
     ///
-    /// * `documents` - A vector of documents to be queried.
+    /// * `documents` - A list of query documents.
     ///
-    /// * `number_of_results` - The candidate list size for the HNSW graph. Higher values result in more accurate search results at the expense of slower retrieval speeds.
+    /// * `number_of_results` - The maximum number of approximate nearest neighbours to return for each query document.
     ///
     /// # Returns
     ///
-    /// A vector of documents that are most similar to the queried documents.
+    /// The records for documents that are most similar to the query documents.
     pub fn query_documents(
         &self,
         documents: &Vec<Bytes>,
         number_of_results: usize,
-    ) -> anyhow::Result<DashMap<Uuid, Vec<u8>>> {
-        if self.index.is_empty() {
+    ) -> anyhow::Result<DashMap<usize, DashMap<Uuid, Vec<u8>>>> {
+        if self.index.no_vectors() {
             return Ok(DashMap::new());
         }
-        let results = DashSet::new();
         let query_embeddings = self.model.embed_documents(documents)?;
-        query_embeddings.into_par_iter().for_each(|x| {
+        self.query_vectors(&query_embeddings, number_of_results)
+    }
+
+    /// Query records from the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `vectors` - A list of query vectors.
+    ///
+    /// * `number_of_results` - The maximum number of approximate nearest neighbours to return for each query vector.
+    ///
+    /// # Returns
+    ///
+    /// The records for documents that are most similar to the query vectors.
+    pub fn query_vectors(
+        &self,
+        vectors: &Vec<Embedding<N>>,
+        number_of_results: usize,
+    ) -> anyhow::Result<DashMap<usize, DashMap<Uuid, Vec<u8>>>> {
+        if self.index.no_vectors() {
+            return Ok(DashMap::new());
+        }
+        let results = DashMap::new();
+        vectors.into_par_iter().enumerate().for_each(|(idx, x)| {
             let mut neighbours = self
                 .index
-                .search_approximate(x, number_of_results, &self.metric)
+                .search(x, number_of_results, &self.metric)
                 .unwrap_or_default();
             neighbours.par_sort_unstable_by_key(|n| n.1);
-            for neighbour in neighbours {
-                results.insert(neighbour.0);
-            }
+            let neighbour_ids: DashSet<_> = neighbours.into_iter().map(|(id, _)| id).collect();
+            results.insert(
+                idx,
+                self.read_documents_from_disk(&neighbour_ids)
+                    .unwrap_or_default(),
+            );
         });
-        Ok(self.read_documents_from_disk(&results)?)
+        Ok(results)
     }
 
     /// Save documents to disk.
     ///
     /// # Arguments
     ///
-    /// * `documents` - A map of document indices and their corresponding documents.
+    /// * `embedding_ids` - A list of document IDs to be inserted.
+    ///
+    /// * `documents` - A list of documents to be inserted.
     pub fn save_documents_to_disk(
         &self,
         embedding_ids: &Vec<Uuid>,
@@ -206,11 +253,11 @@ where
     ///
     /// # Arguments
     ///
-    /// * `documents` - A vector of document indices to be read.
+    /// * `documents` - A set of document IDs to be read.
     ///
     /// # Returns
     ///
-    /// A map of document indices and the bytes of their corresponding documents.
+    /// A map of document IDs to the bytes of their corresponding documents.
     pub fn read_documents_from_disk(
         &self,
         documents: &DashSet<Uuid>,
