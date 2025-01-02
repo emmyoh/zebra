@@ -24,6 +24,7 @@ use zebra::database::default::image::DefaultImageDatabase;
 use zebra::database::default::text::DefaultTextDatabase;
 use zebra::distance::DistanceUnit;
 use zebra::model::core::DatabaseEmbeddingModel;
+use zebra::model::core::DIM_BGESMALL_EN_1_5;
 use zebra::Embedding;
 
 #[derive(Parser)]
@@ -147,13 +148,13 @@ fn main() -> anyhow::Result<()> {
                 let mut buffer = BufWriter::new(stdout().lock());
                 writeln!(buffer, "Inserting {} text(s).", texts.len())?;
                 let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
-                let insertion_results = db.insert_documents(&texts_bytes)?;
+                db.insert_documents(&texts_bytes)?;
                 sw.stop();
                 writeln!(
                     buffer,
                     "{} embeddings of {} dimensions inserted into the database in {}.",
-                    HumanCount(insertion_results.0.try_into()?).to_string(),
-                    HumanCount(insertion_results.1.try_into()?).to_string(),
+                    HumanCount(texts_bytes.len() as u64).to_string(),
+                    HumanCount(DIM_BGESMALL_EN_1_5 as u64).to_string(),
                     pretty_duration(&sw.elapsed(), None)
                 )?;
             }
@@ -239,10 +240,6 @@ fn main() -> anyhow::Result<()> {
                         let _ = viuer::print(&img, &image_print_config);
                     }
                 }
-                // for result in query_results {
-                //     let path = PathBuf::from(String::from_utf8(result)?);
-                //     let _ = viuer::print_from_file(&path, &image_print_config);
-                // }
             }
             ImageCommands::Clear => {
                 DefaultImageDatabase::open_or_create(&cli.database_path).clear_database();
@@ -284,12 +281,6 @@ fn main() -> anyhow::Result<()> {
                         sink.append(source);
                         sink.sleep_until_end();
                     }
-                    // let path = PathBuf::from(String::from_utf8(result)?);
-                    // writeln!(buffer, "Playing {} … ", path.to_string_lossy())?;
-                    // let file = BufReader::new(File::open(path)?);
-                    // let source = Decoder::new(file)?;
-                    // sink.append(source);
-                    // sink.sleep_until_end();
                 }
             }
             AudioCommands::Clear => {
@@ -335,12 +326,12 @@ where
         .chunks(batch_size)
         .map(|document_batch| -> anyhow::Result<()> {
             let mut batch_sw = Stopwatch::start_new();
-            let insertion_results = db.insert_documents(&document_batch)?;
+            db.insert_documents(&document_batch)?;
             batch_sw.stop();
             progress_bar.println(format!(
                 "{} embeddings of {} dimensions inserted into the database in {}.",
-                HumanCount(insertion_results.0 as u64).to_string(),
-                HumanCount(insertion_results.1 as u64).to_string(),
+                HumanCount(document_batch.len() as u64).to_string(),
+                HumanCount(N as u64).to_string(),
                 pretty_duration(&batch_sw.elapsed(), None)
             ));
             progress_bar.inc(batch_size as u64);
@@ -350,22 +341,6 @@ where
             Ok(())
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    // Insert documents in batches.
-    // for document_batch in documents.chunks(batch_size) {
-    //     let mut batch_sw = Stopwatch::start_new();
-    //     let insertion_results = db.insert_documents(document_batch.to_vec())?;
-    //     batch_sw.stop();
-    //     progress_bar.println(format!(
-    //         "{} embeddings of {} dimensions inserted into the database in {}.",
-    //         HumanCount(insertion_results.0 as u64).to_string(),
-    //         HumanCount(insertion_results.1 as u64).to_string(),
-    //         pretty_duration(&batch_sw.elapsed(), None)
-    //     ));
-    //     progress_bar.inc(batch_size as u64);
-    //     if progress_bar.is_hidden() {
-    //         progress_bar.set_draw_target(ProgressDrawTarget::stderr_with_hz(100));
-    //     }
-    // }
     sw.stop();
     progress_bar.println(format!(
         "Inserted {} document(s) in {}.",

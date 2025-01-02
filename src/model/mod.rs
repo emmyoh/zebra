@@ -1,6 +1,6 @@
 /// Audio embedding models.
 pub mod audio;
-/// Core embedding implementation.
+/// Core model interface.
 pub mod core;
 /// Image embedding models.
 pub mod image;

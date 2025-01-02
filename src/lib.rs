@@ -2,11 +2,11 @@
 // #![feature(doc_auto_cfg)]
 #![warn(missing_docs)]
 
-/// A module for database operations regardless of data type.
+/// Implementation of database operations.
 pub mod database;
-/// A module for distance metrics.
+/// Implementation of distance metrics.
 pub mod distance;
-/// A module for embedding models.
+/// Interface for embedding models.
 pub mod model;
 
 /// An embedding vector.

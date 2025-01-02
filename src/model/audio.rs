@@ -21,9 +21,9 @@ use symphonia::core::{
     probe::Hint,
 };
 
-/// A trait for audio embedding models; these models are a subset of image embedding models.
+/// Interface provided by audio embedding models; these models are a subset of image embedding models.
 pub trait AudioEmbeddingModel: ImageEmbeddingModel {
-    /// Decodes the samples of an audio files.
+    /// Decodes the samples of an audio file.
     ///
     /// # Arguments
     ///

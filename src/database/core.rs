@@ -17,15 +17,15 @@ use std::{
 use uuid::Uuid;
 
 #[derive(Encode, Decode)]
-/// A database containing documents and their embeddings.
+/// A database containing embedding vectors and documents.
 ///
 /// # Arguments
 ///
 /// * `N` - The dimensionality of the vectors in the database.
 ///
-/// * `Met` - The distance metric for the embeddings.
+/// * `Met` - The distance metric used by the database index.
 ///
-/// * `Mod` - The model used to generate embeddings.
+/// * `Mod` - The model used to generate the embedding vectors.
 pub struct Database<
     const N: usize,
     Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Encode + Send + Sync,
@@ -126,15 +126,9 @@ where
     /// # Arguments
     ///
     /// * `documents` - A vector of documents to be inserted.
-    ///
-    /// # Returns
-    ///
-    /// A tuple containing the number of embeddings inserted and the dimension of the embeddings.
-    pub fn insert_documents(&self, documents: &Vec<Bytes>) -> anyhow::Result<(usize, usize)> {
+    pub fn insert_documents(&self, documents: &Vec<Bytes>) -> anyhow::Result<()> {
         let new_embeddings: Vec<Embedding<N>> = self.model.embed_documents(documents)?;
-        let length_and_dimension = (new_embeddings.len(), new_embeddings[0].len());
-        self.insert_records(&new_embeddings, documents)?;
-        Ok(length_and_dimension)
+        self.insert_records(&new_embeddings, documents)
     }
 
     /// Insert embedding-byte pairs into the database.\

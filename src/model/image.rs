@@ -10,7 +10,7 @@ use image::ImageReader;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::io::Cursor;
 
-/// A trait for image embedding models.
+/// Interface provided by image embedding models.
 pub trait ImageEmbeddingModel {
     /// Loads an image from raw bytes with ImageNet normalisation applied, returning a tensor with the shape [3 224 224].
     ///
