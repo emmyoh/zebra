@@ -1,7 +1,6 @@
 use super::core::{DatabaseEmbeddingModel, DIM_BGESMALL_EN_1_5};
 use crate::Embedding;
 use bitcode::{Decode, Encode};
-use bytes::Bytes;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -10,7 +9,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 pub struct BGESmallEn1_5;
 
 impl DatabaseEmbeddingModel<DIM_BGESMALL_EN_1_5> for BGESmallEn1_5 {
-    fn embed_documents(&self, documents: &Vec<Bytes>) -> anyhow::Result<Vec<Embedding<384>>> {
+    fn embed_documents(&self, documents: &[bytes::Bytes]) -> anyhow::Result<Vec<Embedding<384>>> {
         let model = TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(false),
         )?;

@@ -50,29 +50,24 @@ pub trait AudioEmbeddingModel: ImageEmbeddingModel {
         let mut sample_rate = 0;
         let mut data = Vec::new();
 
-        loop {
-            match format.next_packet() {
-                Ok(packet) => {
-                    while !format.metadata().is_latest() {
-                        format.metadata().pop();
-                    }
-                    if packet.track_id() != track_id {
-                        continue;
-                    }
-                    match decoder.decode(&packet) {
-                        Ok(decoded) => {
-                            let decoded = decoded.make_equivalent::<i16>();
-                            sample_rate = decoded.spec().rate;
-                            let number_channels = decoded.spec().channels.count();
-                            for i in 0..number_channels {
-                                let samples = decoded.chan(i);
-                                data.extend_from_slice(samples);
-                            }
-                        }
-                        Err(_) => continue,
+        while let Ok(packet) = format.next_packet() {
+            while !format.metadata().is_latest() {
+                format.metadata().pop();
+            }
+            if packet.track_id() != track_id {
+                continue;
+            }
+            match decoder.decode(&packet) {
+                Ok(decoded) => {
+                    let decoded = decoded.make_equivalent::<i16>();
+                    sample_rate = decoded.spec().rate;
+                    let number_channels = decoded.spec().channels.count();
+                    for i in 0..number_channels {
+                        let samples = decoded.chan(i);
+                        data.extend_from_slice(samples);
                     }
                 }
-                Err(_) => break,
+                Err(_) => continue,
             }
         }
 
@@ -113,7 +108,7 @@ impl AudioEmbeddingModel for VitBasePatch16_224 {}
 impl DatabaseEmbeddingModel<DIM_VIT_BASE_PATCH16_224> for VitBasePatch16_224 {
     fn embed_documents(
         &self,
-        documents: &Vec<Bytes>,
+        documents: &[bytes::Bytes],
     ) -> anyhow::Result<Vec<Embedding<DIM_VIT_BASE_PATCH16_224>>> {
         let mut result = Vec::new();
         let device = candle_examples::device(false)?;

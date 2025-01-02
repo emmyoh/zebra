@@ -51,7 +51,7 @@ impl ImageEmbeddingModel for VitBasePatch16_224 {}
 impl DatabaseEmbeddingModel<DIM_VIT_BASE_PATCH16_224> for VitBasePatch16_224 {
     fn embed_documents(
         &self,
-        documents: &Vec<Bytes>,
+        documents: &[bytes::Bytes],
     ) -> anyhow::Result<Vec<Embedding<DIM_VIT_BASE_PATCH16_224>>> {
         let mut result = Vec::new();
         let device = candle_examples::device(false)?;

@@ -124,18 +124,16 @@ impl<const N: usize> LSHIndex<N> {
 
         let empty_slice = fjall::Slice::from(vec![]);
         let a = samples
-            .get(0)
-            .map(|x| x.as_ref().map(|y| &y.1).ok())
-            .flatten()
+            .first()
+            .and_then(|x| x.as_ref().map(|y| &y.1).ok())
             .unwrap_or(&empty_slice);
         let b = samples
             .get(1)
-            .map(|x| x.as_ref().map(|y| &y.1).ok())
-            .flatten()
+            .and_then(|x| x.as_ref().map(|y| &y.1).ok())
             .unwrap_or(&empty_slice);
         let (a, b) = (
-            bitcode::decode(&a).unwrap_or([0.0; N]),
-            bitcode::decode(&b).unwrap_or([0.0; N]),
+            bitcode::decode(a).unwrap_or([0.0; N]),
+            bitcode::decode(b).unwrap_or([0.0; N]),
         );
 
         // Use the two random points to make a hyperplane orthogonal to a line connecting the two points
@@ -172,7 +170,7 @@ impl<const N: usize> LSHIndex<N> {
             true => Ok(Node::Leaf(Box::new(LeafNode(indexes.clone())))),
             false => {
                 // If there are too many indices to fit into a leaf node, recursively build trees to spread the indices across leaf nodes.
-                let (hyperplane, above, below) = self.build_hyperplane(&indexes)?;
+                let (hyperplane, above, below) = self.build_hyperplane(indexes)?;
 
                 let node_above = self.build_a_tree(&above)?;
                 let node_below = self.build_a_tree(&below)?;
@@ -249,7 +247,7 @@ impl<const N: usize> LSHIndex<N> {
                             .map(|idx| {
                                 let curr_vector: Embedding<N> =
                                     self.vector(&embeddings, Uuid::from_bytes_ref(idx));
-                                (idx, metric.distance(&curr_vector, &query))
+                                (idx, metric.distance(&curr_vector, query))
                             })
                             .collect::<Vec<_>>();
                         sorted_candidates
@@ -269,7 +267,7 @@ impl<const N: usize> LSHIndex<N> {
                 }
             }
             Node::Inner(inner_node) => {
-                let is_above = inner_node.hyperplane.point_is_above(&query);
+                let is_above = inner_node.hyperplane.point_is_above(query);
                 let (main, backup) = match is_above {
                     true => (&inner_node.right_node, &inner_node.left_node),
                     false => (&inner_node.left_node, &inner_node.right_node),
@@ -293,7 +291,7 @@ impl<const N: usize> LSHIndex<N> {
     ) -> anyhow::Result<()> {
         match current_node {
             Node::Inner(inner_node) => {
-                let is_above = inner_node.hyperplane.point_is_above(&embedding);
+                let is_above = inner_node.hyperplane.point_is_above(embedding);
 
                 let next_node = match is_above {
                     true => &mut inner_node.right_node,
@@ -336,8 +334,7 @@ impl<const N: usize> LSHIndex<N> {
     pub fn no_vectors(&self) -> bool {
         self.embeddings()
             .ok()
-            .map(|x| x.is_empty().ok())
-            .flatten()
+            .and_then(|x| x.is_empty().ok())
             .unwrap_or(true)
     }
 
@@ -349,8 +346,7 @@ impl<const N: usize> LSHIndex<N> {
     pub fn no_trees(&self) -> bool {
         self.trees()
             .ok()
-            .map(|x| x.is_empty().ok())
-            .flatten()
+            .and_then(|x| x.is_empty().ok())
             .unwrap_or(true)
     }
 
@@ -404,30 +400,21 @@ impl<const N: usize> LSHIndex<N> {
         embedding_ids
             .par_iter()
             .map(|x| -> anyhow::Result<()> {
-                trees
-                    .iter()
-                    .map(|kv| -> anyhow::Result<()> {
-                        let (k, v) = kv?;
-                        let id = Uuid::from_bytes(bitcode::decode::<[u8; 16]>(&k)?);
-                        let mut tree: Node<N> = bitcode::decode(&v)?;
-                        match tree {
-                            Node::Leaf(leaf) => {
-                                let leaf_nodes: Vec<[u8; 16]> = (*leaf)
-                                    .0
-                                    .into_par_iter()
-                                    .filter(|y| y != x.as_bytes())
-                                    .collect();
-                                tree = Node::Leaf(Box::new(LeafNode(leaf_nodes)));
-                                trees.insert(
-                                    bitcode::encode(id.as_bytes()),
-                                    bitcode::encode(&tree),
-                                )?;
-                            }
-                            _ => (),
-                        }
-                        Ok(())
-                    })
-                    .collect::<anyhow::Result<()>>()?;
+                trees.iter().try_for_each(|kv| -> anyhow::Result<()> {
+                    let (k, v) = kv?;
+                    let id = Uuid::from_bytes(bitcode::decode::<[u8; 16]>(&k)?);
+                    let mut tree: Node<N> = bitcode::decode(&v)?;
+                    if let Node::Leaf(leaf) = tree {
+                        let leaf_nodes: Vec<[u8; 16]> = (*leaf)
+                            .0
+                            .into_par_iter()
+                            .filter(|y| y != x.as_bytes())
+                            .collect();
+                        tree = Node::Leaf(Box::new(LeafNode(leaf_nodes)));
+                        trees.insert(bitcode::encode(id.as_bytes()), bitcode::encode(&tree))?;
+                    }
+                    Ok(())
+                })?;
                 embeddings.remove(bitcode::encode(x.as_bytes()))?;
                 Ok(())
             })
@@ -495,14 +482,9 @@ impl<const N: usize> LSHIndex<N> {
         let embeddings = self.embeddings()?;
         let mut sorted_candidates = candidates
             .into_par_iter()
-            .map(|idx| {
-                (
-                    idx,
-                    metric.distance(&self.vector(&embeddings, &idx), &query),
-                )
-            })
+            .map(|idx| (idx, metric.distance(&self.vector(&embeddings, &idx), query)))
             .collect::<Vec<_>>();
         sorted_candidates.par_sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        Ok(sorted_candidates.into_iter().take(top_k as usize).collect())
+        Ok(sorted_candidates.into_iter().take(top_k).collect())
     }
 }

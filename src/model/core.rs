@@ -19,7 +19,7 @@ pub trait DatabaseEmbeddingModel<const N: usize>: Encode {
     /// # Returns
     ///
     /// A vector of embeddings.
-    fn embed_documents(&self, documents: &Vec<Bytes>) -> anyhow::Result<Vec<Embedding<N>>>;
+    fn embed_documents(&self, documents: &[Bytes]) -> anyhow::Result<Vec<Embedding<N>>>;
 
     /// Embed a single document.
     ///
@@ -31,7 +31,7 @@ pub trait DatabaseEmbeddingModel<const N: usize>: Encode {
     ///
     /// An embedding vector.
     fn embed(&self, document: Bytes) -> anyhow::Result<Embedding<N>> {
-        self.embed_documents(&vec![document])
+        self.embed_documents(&[document])
             .map(|x| x.into_iter().next().unwrap_or([0.0; N]))
     }
 }

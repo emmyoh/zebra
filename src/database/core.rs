@@ -145,7 +145,7 @@ where
         documents: &Vec<Bytes>,
     ) -> anyhow::Result<()> {
         let embedding_ids = self.index.add(embeddings)?;
-        self.save_documents_to_disk(&embedding_ids, &documents)?;
+        self.save_documents_to_disk(&embedding_ids, documents)?;
         self.save_database(None)?;
         Ok(())
     }
@@ -163,7 +163,7 @@ where
     /// The records for documents that are most similar to the query documents.
     pub fn query_documents(
         &self,
-        documents: &Vec<Bytes>,
+        documents: &[Bytes],
         number_of_results: usize,
     ) -> anyhow::Result<DashMap<usize, DashMap<Uuid, Vec<u8>>>> {
         if self.index.no_vectors() {
