@@ -34,7 +34,8 @@ pub struct Database<
     uuid: [u8; 16],
     model: Mod,
     metric: Met,
-    index: LSHIndex<N>,
+    /// The database index used to approximate nearest-neighbour search.
+    pub index: LSHIndex<N>,
     path: String,
 }
 
