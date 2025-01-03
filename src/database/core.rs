@@ -1,13 +1,13 @@
 use super::index::lsh::LSHIndex;
 use crate::Embedding;
 use crate::{distance::DistanceUnit, model::core::DatabaseEmbeddingModel};
-use bitcode::{Decode, Encode};
 use bytes::Bytes;
 use dashmap::{DashMap, DashSet};
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator};
 use rayon::slice::ParallelSliceMut;
+use serde::{Deserialize, Serialize};
 use space::Metric;
 use std::io::Cursor;
 use std::{
@@ -16,7 +16,7 @@ use std::{
 };
 use uuid::Uuid;
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 /// A database containing embedding vectors and documents.
 ///
 /// # Arguments
@@ -28,10 +28,10 @@ use uuid::Uuid;
 /// * `Mod` - The model used to generate the embedding vectors.
 pub struct Database<
     const N: usize,
-    Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Encode + Send + Sync,
-    Mod: DatabaseEmbeddingModel<N> + Default + Encode + Send + Sync,
+    Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
+    Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
 > {
-    uuid: [u8; 16],
+    uuid: Uuid,
     model: Mod,
     metric: Met,
     /// The database index used to approximate nearest-neighbour search.
@@ -41,19 +41,19 @@ pub struct Database<
 
 impl<
         const N: usize,
-        Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Encode + Send + Sync,
-        Mod: DatabaseEmbeddingModel<N> + Default + Encode + Send + Sync,
+        Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
+        Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
     > Database<N, Met, Mod>
 where
-    for<'de> Mod: Decode<'de>,
-    for<'de> Met: Decode<'de>,
+    for<'de> Mod: Deserialize<'de>,
+    for<'de> Met: Deserialize<'de>,
 {
     fn database_subdirectory(&self) -> String {
-        format!("{}", Uuid::from_bytes(self.uuid).as_simple())
+        format!("{}", self.uuid.as_simple())
     }
 
     fn default_database_path(&self) -> String {
-        format!("{}.zebra", Uuid::from_bytes(self.uuid).as_simple())
+        format!("{}.zebra", self.uuid.as_simple())
     }
 
     /// Load the database from disk.
@@ -67,7 +67,7 @@ where
     /// A [Database] containing embeddings & documents.
     pub fn open(path: &String) -> anyhow::Result<Self> {
         let db_bytes = fs::read(path)?;
-        let mut db: Self = bitcode::decode(&db_bytes)?;
+        let mut db: Self = bincode::deserialize(&db_bytes)?;
         db.path = path.clone();
         Ok(db)
     }
@@ -80,7 +80,7 @@ where
     /// A new [Database].
     pub fn new() -> Self {
         let mut new = Self {
-            uuid: Uuid::now_v7().into_bytes(),
+            uuid: Uuid::now_v7(),
             model: Mod::default(),
             metric: Met::default(),
             index: LSHIndex::build_index(15),
@@ -109,7 +109,7 @@ where
     ///
     /// * `path` - An optional path to save the database to; if left blank, will use the path the database was opened from.
     pub fn save_database(&self, path: Option<&String>) -> anyhow::Result<()> {
-        fs::write(path.unwrap_or(&self.path), bitcode::encode(self))?;
+        fs::write(path.unwrap_or(&self.path), bincode::serialize(self)?)?;
         Ok(())
     }
 

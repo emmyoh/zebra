@@ -1,5 +1,6 @@
+use std::ops::Deref;
+
 use crate::{distance::DistanceUnit, Embedding, EmbeddingPrecision, KEYSPACE};
-use bitcode::{Decode, Encode};
 use dashmap::DashSet;
 use fjall::{KvSeparationOptions, PartitionCreateOptions, PartitionHandle, PersistMode};
 use rand::seq::IteratorRandom;
@@ -7,11 +8,12 @@ use rayon::{
     iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
     slice::ParallelSliceMut,
 };
+use serde::{Deserialize, Serialize};
 use simsimd::SpatialSimilarity;
 use space::Metric;
 use uuid::Uuid;
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 /// An `N`-dimensional hyperplane; a hyperplane is a generalisation of a line (which has one dimension) or plane (which has two dimensions).
 ///
 /// It is defined when the dot product of a normal vector and some other vector, plus a constant, equals zero.
@@ -35,62 +37,62 @@ impl<const N: usize> Hyperplane<N> {
     ///
     /// If the given point is above the hyperplane.
     pub fn point_is_above(&self, point: &Embedding<N>) -> bool {
-        EmbeddingPrecision::dot(&self.coefficients, point).unwrap_or_default()
+        EmbeddingPrecision::dot(self.coefficients.deref(), point.deref()).unwrap_or_default()
             + self.constant as f64
             >= 0.0
     }
 }
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 enum Node<const N: usize> {
     Inner(Box<InnerNode<N>>),
     Leaf(Box<LeafNode>),
 }
 
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 struct InnerNode<const N: usize> {
     hyperplane: Hyperplane<N>,
     left_node: Node<N>,
     right_node: Node<N>,
 }
 
-#[derive(Encode, Decode)]
-struct LeafNode(Vec<[u8; 16]>);
+#[derive(Serialize, Deserialize)]
+struct LeafNode(Vec<Uuid>);
 
 /// An implementation of [the random projection method of locality sensitive hashing (LSH)](https://en.wikipedia.org/wiki/Locality-sensitive_hashing#Random_projection) as a data structure for use as a database index.
 ///
 /// This index stores vectors on disk, minimising memory usage.
 /// Memory-mapped file IO [is *not* used](https://db.cs.cmu.edu/mmap-cidr2022/).
-#[derive(Encode, Decode)]
+#[derive(Serialize, Deserialize)]
 pub struct LSHIndex<const N: usize> {
-    uuid: [u8; 16],
+    uuid: Uuid,
     max_node_size: usize,
 }
 
 impl<const N: usize> LSHIndex<N> {
     fn trees(&self) -> anyhow::Result<PartitionHandle> {
         Ok(KEYSPACE.open_partition(
-            &format!("{}-trees", Uuid::from_bytes(self.uuid).as_simple()),
+            &format!("{}-trees", self.uuid.as_simple()),
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?)
     }
 
     fn embeddings(&self) -> anyhow::Result<PartitionHandle> {
         Ok(KEYSPACE.open_partition(
-            &format!("{}-embeddings", Uuid::from_bytes(self.uuid).as_simple()),
+            &format!("{}-embeddings", self.uuid.as_simple()),
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?)
     }
 
     fn vector(&self, embeddings: &PartitionHandle, idx: &Uuid) -> Embedding<N> {
-        bitcode::decode(
+        bincode::deserialize(
             &embeddings
-                .get(bitcode::encode(idx.as_bytes()))
+                .get(bincode::serialize(idx).unwrap_or_default())
                 .ok()
                 .flatten()
                 .unwrap_or(fjall::Slice::from(vec![])),
         )
-        .unwrap_or([0.0; N])
+        .unwrap_or_default()
     }
 
     fn subtract(lhs: &Embedding<N>, rhs: &Embedding<N>) -> Embedding<N> {
@@ -99,7 +101,7 @@ impl<const N: usize> LSHIndex<N> {
             .map(|(a, b)| a - b)
             .collect::<Vec<_>>()
             .try_into()
-            .unwrap_or([0.0; N])
+            .unwrap_or_default()
     }
 
     fn average(lhs: &Embedding<N>, rhs: &Embedding<N>) -> Embedding<N> {
@@ -108,13 +110,13 @@ impl<const N: usize> LSHIndex<N> {
             .map(|(a, b)| (a + b) / 2.0)
             .collect::<Vec<_>>()
             .try_into()
-            .unwrap_or([0.0; N])
+            .unwrap_or_default()
     }
 
     fn build_hyperplane(
         &self,
-        indexes: &Vec<[u8; 16]>,
-    ) -> anyhow::Result<(Hyperplane<N>, Vec<[u8; 16]>, Vec<[u8; 16]>)> {
+        indexes: &Vec<Uuid>,
+    ) -> anyhow::Result<(Hyperplane<N>, Vec<Uuid>, Vec<Uuid>)> {
         let embeddings = self.embeddings()?;
 
         // Pick two random vectors
@@ -132,15 +134,15 @@ impl<const N: usize> LSHIndex<N> {
             .and_then(|x| x.as_ref().map(|y| &y.1).ok())
             .unwrap_or(&empty_slice);
         let (a, b) = (
-            bitcode::decode(a).unwrap_or([0.0; N]),
-            bitcode::decode(b).unwrap_or([0.0; N]),
+            bincode::deserialize(a).unwrap_or_default(),
+            bincode::deserialize(b).unwrap_or_default(),
         );
 
         // Use the two random points to make a hyperplane orthogonal to a line connecting the two points
         let coefficients = Self::subtract(&b, &a);
         let point_on_plane = Self::average(&a, &b);
-        let constant =
-            -EmbeddingPrecision::dot(&coefficients, &point_on_plane).unwrap_or_default() as f32;
+        let constant = -EmbeddingPrecision::dot(coefficients.deref(), point_on_plane.deref())
+            .unwrap_or_default() as EmbeddingPrecision;
 
         let hyperplane = Hyperplane {
             coefficients,
@@ -148,11 +150,11 @@ impl<const N: usize> LSHIndex<N> {
         };
 
         // For each given vector ID, classify a vector as above or below the hyperplane.
-        let above: DashSet<[u8; 16]> = DashSet::new();
-        let below: DashSet<[u8; 16]> = DashSet::new();
+        let above: DashSet<Uuid> = DashSet::new();
+        let below: DashSet<Uuid> = DashSet::new();
 
         indexes.into_par_iter().for_each(|id| {
-            match hyperplane.point_is_above(&self.vector(&embeddings, Uuid::from_bytes_ref(id))) {
+            match hyperplane.point_is_above(&self.vector(&embeddings, id)) {
                 true => above.insert(*id),
                 false => below.insert(*id),
             };
@@ -165,7 +167,7 @@ impl<const N: usize> LSHIndex<N> {
         ))
     }
 
-    fn build_a_tree(&self, indexes: &Vec<[u8; 16]>) -> anyhow::Result<Node<N>> {
+    fn build_a_tree(&self, indexes: &Vec<Uuid>) -> anyhow::Result<Node<N>> {
         match indexes.len() < self.max_node_size {
             true => Ok(Node::Leaf(Box::new(LeafNode(indexes.clone())))),
             false => {
@@ -191,8 +193,8 @@ impl<const N: usize> LSHIndex<N> {
         let embeddings = self.embeddings()?;
         for kv in embeddings.iter() {
             let (k, v) = kv?;
-            let id = Uuid::from_bytes(bitcode::decode::<[u8; 16]>(&k)?);
-            let embedding: Embedding<N> = bitcode::decode(&v)?;
+            let id = bincode::deserialize::<Uuid>(&k)?;
+            let embedding: Embedding<N> = bincode::deserialize(&v)?;
             // The embedding itself cannot be hashed, so we look at its bits
             let embedding_bits: Vec<_> = embedding.iter().map(|x| x.to_bits()).collect();
             match seen.contains(&embedding_bits) {
@@ -216,7 +218,7 @@ impl<const N: usize> LSHIndex<N> {
     /// An [LSHIndex].
     pub fn build_index(max_node_size: usize) -> Self {
         Self {
-            uuid: Uuid::now_v7().into_bytes(),
+            uuid: Uuid::now_v7(),
             max_node_size,
         }
     }
@@ -236,7 +238,7 @@ impl<const N: usize> LSHIndex<N> {
                     true => {
                         // If there are less than `n` vectors in this leaf node, they're all part of the candidate list.
                         leaf_values_index.into_par_iter().for_each(|i| {
-                            candidates.insert(Uuid::from_bytes(*i));
+                            candidates.insert(*i);
                         });
                         Ok(leaf_values_index.len() as i32)
                     }
@@ -245,8 +247,7 @@ impl<const N: usize> LSHIndex<N> {
                         let mut sorted_candidates = leaf_values_index
                             .into_par_iter()
                             .map(|idx| {
-                                let curr_vector: Embedding<N> =
-                                    self.vector(&embeddings, Uuid::from_bytes_ref(idx));
+                                let curr_vector: Embedding<N> = self.vector(&embeddings, idx);
                                 (idx, metric.distance(&curr_vector, query))
                             })
                             .collect::<Vec<_>>();
@@ -255,7 +256,7 @@ impl<const N: usize> LSHIndex<N> {
                         let top_candidates: Vec<Uuid> = sorted_candidates
                             .iter()
                             .take(n as usize)
-                            .map(|(idx, _)| Uuid::from_bytes(**idx))
+                            .map(|(idx, _)| **idx)
                             .collect();
 
                         top_candidates.into_par_iter().for_each(|i| {
@@ -302,11 +303,11 @@ impl<const N: usize> LSHIndex<N> {
             }
             Node::Leaf(leaf_node) => {
                 match leaf_node.0.len() + 1 > self.max_node_size {
-                    false => leaf_node.0.push(vec_id.into_bytes()),
+                    false => leaf_node.0.push(vec_id),
                     true => {
                         // If adding the vector ID to this leaf node would cause it to be too large, split this node.
                         let mut new_indexes = leaf_node.0.clone();
-                        new_indexes.push(vec_id.into_bytes());
+                        new_indexes.push(vec_id);
 
                         let result_node = self.build_a_tree(&new_indexes)?;
                         *current_node = result_node;
@@ -367,17 +368,14 @@ impl<const N: usize> LSHIndex<N> {
             .par_iter()
             .map(|embedding| -> anyhow::Result<Uuid> {
                 let vec_id = Uuid::now_v7();
-                vectors.insert(
-                    bitcode::encode(vec_id.as_bytes()),
-                    bitcode::encode(embedding),
-                )?;
+                vectors.insert(bincode::serialize(&vec_id)?, bincode::serialize(embedding)?)?;
 
                 for kv in trees.iter() {
                     let (k, v) = kv?;
-                    let id = Uuid::from_bytes(bitcode::decode::<[u8; 16]>(&k)?);
-                    let mut tree: Node<N> = bitcode::decode(&v)?;
+                    let id = bincode::deserialize::<Uuid>(&k)?;
+                    let mut tree: Node<N> = bincode::deserialize(&v)?;
                     self.insert(&mut tree, embedding, vec_id)?;
-                    trees.insert(bitcode::encode(id.as_bytes()), bitcode::encode(&tree))?;
+                    trees.insert(bincode::serialize(&id)?, bincode::serialize(&tree)?)?;
                 }
 
                 Ok(vec_id)
@@ -402,20 +400,17 @@ impl<const N: usize> LSHIndex<N> {
             .map(|x| -> anyhow::Result<()> {
                 trees.iter().try_for_each(|kv| -> anyhow::Result<()> {
                     let (k, v) = kv?;
-                    let id = Uuid::from_bytes(bitcode::decode::<[u8; 16]>(&k)?);
-                    let mut tree: Node<N> = bitcode::decode(&v)?;
+                    let id = bincode::deserialize::<Uuid>(&k)?;
+                    let mut tree: Node<N> = bincode::deserialize(&v)?;
                     if let Node::Leaf(leaf) = tree {
-                        let leaf_nodes: Vec<[u8; 16]> = (*leaf)
-                            .0
-                            .into_par_iter()
-                            .filter(|y| y != x.as_bytes())
-                            .collect();
+                        let leaf_nodes: Vec<Uuid> =
+                            (*leaf).0.into_par_iter().filter(|y| y != x).collect();
                         tree = Node::Leaf(Box::new(LeafNode(leaf_nodes)));
-                        trees.insert(bitcode::encode(id.as_bytes()), bitcode::encode(&tree))?;
+                        trees.insert(bincode::serialize(&id)?, bincode::serialize(&tree)?)?;
                     }
                     Ok(())
                 })?;
-                embeddings.remove(bitcode::encode(x.as_bytes()))?;
+                embeddings.remove(bincode::serialize(x)?)?;
                 Ok(())
             })
             .collect::<anyhow::Result<()>>()?;
@@ -475,7 +470,7 @@ impl<const N: usize> LSHIndex<N> {
 
         for kv in trees.iter() {
             let (_, v) = kv?;
-            let tree: Node<N> = bitcode::decode(&v)?;
+            let tree: Node<N> = bincode::deserialize(&v)?;
             self.tree_result(query, top_k as i32, &tree, &candidates, metric)?;
         }
 

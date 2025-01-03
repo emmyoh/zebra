@@ -1,5 +1,3 @@
-use bitcode::Decode;
-use bitcode::Encode;
 use bytes::Bytes;
 use clap::{command, Parser, Subcommand};
 use indicatif::HumanCount;
@@ -11,6 +9,8 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use rodio::{Decoder, OutputStream, Sink};
+use serde::Deserialize;
+use serde::Serialize;
 use space::Metric;
 use std::io::BufReader;
 use std::io::Cursor;
@@ -297,16 +297,16 @@ fn progress_bar_style() -> anyhow::Result<ProgressStyle> {
 
 fn insert_from_files<
     const N: usize,
-    Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Encode + Send + Sync,
-    Mod: DatabaseEmbeddingModel<N> + Default + Encode + Send + Sync,
+    Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
+    Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
 >(
     db: &Database<N, Met, Mod>,
     file_paths: Vec<PathBuf>,
     batch_size: usize,
 ) -> anyhow::Result<()>
 where
-    for<'de> Met: Decode<'de>,
-    for<'de> Mod: Decode<'de>,
+    for<'de> Met: Deserialize<'de>,
+    for<'de> Mod: Deserialize<'de>,
 {
     let mut sw = Stopwatch::start_new();
     let num_documents = file_paths.len();

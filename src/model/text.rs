@@ -1,11 +1,11 @@
 use super::core::{DatabaseEmbeddingModel, DIM_BGESMALL_EN_1_5};
 use crate::Embedding;
-use bitcode::{Decode, Encode};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use serde::{Deserialize, Serialize};
 
 /// A model for embedding text.
-#[derive(Default, Encode, Decode, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BGESmallEn1_5;
 
 impl DatabaseEmbeddingModel<DIM_BGESMALL_EN_1_5> for BGESmallEn1_5 {
@@ -23,7 +23,7 @@ impl DatabaseEmbeddingModel<DIM_BGESMALL_EN_1_5> for BGESmallEn1_5 {
         )?;
         Ok(embeddings
             .into_par_iter()
-            .map(|x| x.try_into().unwrap_or([0.0; 384]))
+            .map(|x| x.try_into().unwrap_or_default())
             .collect())
     }
 }

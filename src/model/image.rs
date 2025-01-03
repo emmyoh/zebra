@@ -1,6 +1,5 @@
 use super::core::{DatabaseEmbeddingModel, DIM_VIT_BASE_PATCH16_224};
-use crate::Embedding;
-use bitcode::{Decode, Encode};
+use crate::{Embedding, EmbeddingPrecision};
 use bytes::Bytes;
 use candle_core::{DType, Tensor};
 use candle_examples::imagenet::{IMAGENET_MEAN, IMAGENET_STD};
@@ -8,6 +7,7 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::vit;
 use image::ImageReader;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
 /// Interface provided by image embedding models.
@@ -44,7 +44,7 @@ pub trait ImageEmbeddingModel {
 }
 
 /// A model for embedding images.
-#[derive(Default, Encode, Decode, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 
@@ -68,12 +68,14 @@ impl DatabaseEmbeddingModel<DIM_VIT_BASE_PATCH16_224> for VitBasePatch16_224 {
         for document in documents {
             let image = self.load_image224(document)?.to_device(&device)?;
             let embedding_tensors = model.forward(&image.unsqueeze(0)?, None, false)?;
-            let embedding_vector = embedding_tensors.flatten_all()?.to_vec1::<f32>()?;
+            let embedding_vector = embedding_tensors
+                .flatten_all()?
+                .to_vec1::<EmbeddingPrecision>()?;
             result.push(embedding_vector);
         }
         Ok(result
             .into_par_iter()
-            .map(|x| x.try_into().unwrap_or([0.0; DIM_VIT_BASE_PATCH16_224]))
+            .map(|x| x.try_into().unwrap_or_default())
             .collect())
     }
 }
