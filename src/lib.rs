@@ -14,7 +14,7 @@ use serde_with::serde_as;
 
 /// An embedding vector.
 #[serde_as]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding<const N: usize>(#[serde_as(as = "[_; N]")] [EmbeddingPrecision; N]);
 impl<const N: usize> std::ops::Deref for Embedding<N> {
     type Target = [EmbeddingPrecision; N];

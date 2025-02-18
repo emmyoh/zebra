@@ -13,7 +13,7 @@ use simsimd::SpatialSimilarity;
 use space::Metric;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// An `N`-dimensional hyperplane; a hyperplane is a generalisation of a line (which has one dimension) or plane (which has two dimensions).
 ///
 /// It is defined when the dot product of a normal vector and some other vector, plus a constant, equals zero.
@@ -43,27 +43,27 @@ impl<const N: usize> Hyperplane<N> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum Node<const N: usize> {
     Inner(Box<InnerNode<N>>),
     Leaf(Box<LeafNode>),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct InnerNode<const N: usize> {
     hyperplane: Hyperplane<N>,
     left_node: Node<N>,
     right_node: Node<N>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct LeafNode(Vec<Uuid>);
 
 /// An implementation of [the random projection method of locality sensitive hashing (LSH)](https://en.wikipedia.org/wiki/Locality-sensitive_hashing#Random_projection) as a data structure for use as a database index.
 ///
 /// This index stores vectors on disk, minimising memory usage.
 /// Memory-mapped file IO [is *not* used](https://db.cs.cmu.edu/mmap-cidr2022/).
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LSHIndex<const N: usize> {
     uuid: Uuid,
     max_node_size: usize,

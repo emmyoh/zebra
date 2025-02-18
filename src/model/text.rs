@@ -5,7 +5,9 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 /// A model for embedding text.
-#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub struct BGESmallEn1_5;
 
 impl DatabaseEmbeddingModel<DIM_BGESMALL_EN_1_5> for BGESmallEn1_5 {

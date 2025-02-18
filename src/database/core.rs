@@ -16,7 +16,7 @@ use std::{
 };
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// A database containing embedding vectors and documents.
 ///
 /// # Arguments

@@ -44,7 +44,9 @@ pub trait ImageEmbeddingModel {
 }
 
 /// A model for embedding images.
-#[derive(Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub struct VitBasePatch16_224;
 impl ImageEmbeddingModel for VitBasePatch16_224 {}
 
