@@ -186,6 +186,4 @@ images
 audio.db
 audio
 *_old.rs
-.idea/modules.xml
-.idea/vcs.xml
-.idea/zebra.iml
+.idea
