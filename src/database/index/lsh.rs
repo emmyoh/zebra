@@ -187,7 +187,7 @@ impl<const N: usize> LSHIndex<N> {
     }
 
     /// Remove duplicate embedding vectors from the index.
-    pub fn deduplicate(&self) -> anyhow::Result<()> {
+    pub fn deduplicate(&self) -> anyhow::Result<DashSet<Uuid>> {
         let seen: DashSet<Vec<_>> = DashSet::new();
         let mut to_remove = Vec::new();
         let embeddings = self.embeddings()?;
@@ -391,9 +391,10 @@ impl<const N: usize> LSHIndex<N> {
     /// # Arguments
     ///
     /// * `embedding_ids` - The IDs of the vectors to remove.
-    pub fn remove(&self, embedding_ids: &Vec<Uuid>) -> anyhow::Result<()> {
+    pub fn remove(&self, embedding_ids: &Vec<Uuid>) -> anyhow::Result<DashSet<Uuid>> {
         let embeddings = self.embeddings()?;
         let trees = self.trees()?;
+        let removed = DashSet::new();
 
         embedding_ids
             .par_iter()
@@ -411,12 +412,13 @@ impl<const N: usize> LSHIndex<N> {
                     Ok(())
                 })?;
                 embeddings.remove(bincode::serialize(x)?)?;
+                removed.insert(x.clone());
                 Ok(())
             })
             .collect::<anyhow::Result<()>>()?;
 
         KEYSPACE.persist(PersistMode::SyncAll)?;
-        Ok(())
+        Ok(removed)
     }
 
     /// Delete the contents of the index.

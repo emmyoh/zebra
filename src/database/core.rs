@@ -90,6 +90,25 @@ where
         new
     }
 
+    /// Create a database in memory, persisting to storage at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the database file.
+    ///
+    /// # Returns
+    ///
+    /// A [Database] containing embeddings & documents.
+    pub fn new_with_path(path: &String) -> Self {
+        Self {
+            uuid: Uuid::now_v7(),
+            model: Mod::default(),
+            metric: Met::default(),
+            index: LSHIndex::build_index(15),
+            path: path.to_owned(),
+        }
+    }
+
     /// Load the database from disk, or create it if it does not already exist.
     ///
     /// # Arguments
@@ -100,7 +119,7 @@ where
     ///
     /// A [Database] containing embeddings & documents.
     pub fn open_or_create(path: &String) -> Self {
-        Self::open(path).unwrap_or(Self::new())
+        Self::open(path).unwrap_or(Self::new_with_path(path))
     }
 
     /// Save the database to disk.
@@ -119,6 +138,30 @@ where
         let _ = self.index.clear();
         let _ = std::fs::remove_file(&self.path);
         let _ = std::fs::remove_dir_all(self.database_subdirectory());
+    }
+
+    /// Removes records from the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `embedding_ids` - The IDs of the vectors to remove.
+    pub fn remove(&self, embedding_ids: &Vec<Uuid>) -> anyhow::Result<()> {
+        let document_subdirectory = self.database_subdirectory();
+        let removed = self.index.remove(embedding_ids)?;
+        removed.into_par_iter().for_each(|x| {
+            let _ = std::fs::remove_file(format!("{}/{}.lz4", document_subdirectory, x));
+        });
+        Ok(())
+    }
+
+    /// Remove duplicate embedding vectors from the database.
+    pub fn deduplicate(&self) -> anyhow::Result<()> {
+        let document_subdirectory = self.database_subdirectory();
+        let removed = self.index.deduplicate()?;
+        removed.into_par_iter().for_each(|x| {
+            let _ = std::fs::remove_file(format!("{}/{}.lz4", document_subdirectory, x));
+        });
+        Ok(())
     }
 
     /// Insert documents into the database.\
