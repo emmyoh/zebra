@@ -11,7 +11,7 @@ edition = "2021"
 [lib]
 name = "zebra"
 path = "src/lib.rs"
-crate-type=["rlib", "dylib", "staticlib"]
+crate-type = ["rlib", "dylib", "staticlib"]
 
 [[bin]]
 name = "zebra"
@@ -26,10 +26,15 @@ clap = { version = "4.5.23", features = ["derive"], optional = true }
 fastembed = "4.3.0"
 simsimd = "6.2.3"
 space = "0.18.0"
-lz4_flex = { version = "0.11.3", default-features = false, features = ["frame"] }
+lz4_flex = { version = "0.11.3", default-features = false, features = [
+    "frame",
+] }
 ticky = { version = "1.0.2", optional = true }
 pretty-duration = { version = "0.1.1", optional = true }
-indicatif = { version = "0.17.9", optional = true, features = ["rayon", "improved_unicode"] }
+indicatif = { version = "0.17.9", optional = true, features = [
+    "rayon",
+    "improved_unicode",
+] }
 distances = "1.8.0"
 candle-examples = "0.8.1"
 candle-core = "0.8.1"
@@ -46,19 +51,47 @@ symphonia = "0.5.4"
 anyhow = "1.0.95"
 hamming-bitwise-fast = "1.0.0"
 dashmap = { version = "6.1.0", features = ["rayon", "inline", "serde"] }
-rand = "0.8.5"
+rand = "0.9.0"
 fjall = "2.4.4"
 uuid = { version = "1.11.0", features = ["fast-rng", "v7", "serde"] }
 serde = { version = "1.0.217", features = ["derive"] }
-bincode = "1.3.3"
+bincode = { version = "2.0.0", features = ["serde"] }
 serde_with = "3.12.0"
 
 [features]
 default = []
 default_db = []
-accelerate = ["candle-core/accelerate", "candle-examples/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
-cuda = ["candle-core/cuda", "candle-examples/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
-mkl = ["candle-core/mkl", "candle-examples/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
-metal = ["candle-core/metal", "candle-examples/metal", "candle-nn/metal", "candle-transformers/metal"]
+accelerate = [
+    "candle-core/accelerate",
+    "candle-examples/accelerate",
+    "candle-nn/accelerate",
+    "candle-transformers/accelerate",
+]
+cuda = [
+    "candle-core/cuda",
+    "candle-examples/cuda",
+    "candle-nn/cuda",
+    "candle-transformers/cuda",
+]
+mkl = [
+    "candle-core/mkl",
+    "candle-examples/mkl",
+    "candle-nn/mkl",
+    "candle-transformers/mkl",
+]
+metal = [
+    "candle-core/metal",
+    "candle-examples/metal",
+    "candle-nn/metal",
+    "candle-transformers/metal",
+]
 sixel = ["viuer/sixel"]
-cli = ["default_db", "dep:clap", "dep:ticky", "dep:pretty-duration", "dep:indicatif", "dep:viuer", "dep:rodio"]
+cli = [
+    "default_db",
+    "dep:clap",
+    "dep:ticky",
+    "dep:pretty-duration",
+    "dep:indicatif",
+    "dep:viuer",
+    "dep:rodio",
+]

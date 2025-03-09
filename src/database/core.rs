@@ -1,4 +1,4 @@
-use super::index::lsh::LSHIndex;
+use super::index::lsh::{LSHIndex, LSHIndexOptions};
 use crate::Embedding;
 use crate::{distance::DistanceUnit, model::core::DatabaseEmbeddingModel};
 use bytes::Bytes;
@@ -17,6 +17,32 @@ use std::{
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct DatabaseInner<
+    const N: usize,
+    Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
+    Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
+> {
+    uuid: Uuid,
+    model: Mod,
+    metric: Met,
+    index_options: LSHIndexOptions<N>,
+}
+
+impl<
+        const N: usize,
+        Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
+        Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
+    > DatabaseInner<N, Met, Mod>
+where
+    for<'de> Mod: Deserialize<'de>,
+    for<'de> Met: Deserialize<'de>,
+{
+    fn index(&self) -> anyhow::Result<LSHIndex<N>> {
+        LSHIndex::new(&self.uuid, &self.index_options)
+    }
+}
+
+#[derive(Clone)]
 /// A database containing embedding vectors and documents.
 ///
 /// # Arguments
@@ -31,9 +57,7 @@ pub struct Database<
     Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
     Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
 > {
-    uuid: Uuid,
-    model: Mod,
-    metric: Met,
+    inner: DatabaseInner<N, Met, Mod>,
     /// The database index used to approximate nearest-neighbour search.
     pub index: LSHIndex<N>,
     path: String,
@@ -49,11 +73,11 @@ where
     for<'de> Met: Deserialize<'de>,
 {
     fn database_subdirectory(&self) -> String {
-        format!("{}", self.uuid.as_simple())
+        format!("{}", self.inner.uuid.as_simple())
     }
 
     fn default_database_path(&self) -> String {
-        format!("{}.zebra", self.uuid.as_simple())
+        format!("{}.zebra", self.inner.uuid.as_simple())
     }
 
     /// Load the database from disk.
@@ -67,9 +91,14 @@ where
     /// A [Database] containing embeddings & documents.
     pub fn open(path: &String) -> anyhow::Result<Self> {
         let db_bytes = fs::read(path)?;
-        let mut db: Self = bincode::deserialize(&db_bytes)?;
-        db.path = path.clone();
-        Ok(db)
+        let inner: DatabaseInner<N, Met, Mod> =
+            bincode::serde::decode_from_slice(&db_bytes, bincode::config::legacy())?.0;
+        let index = inner.index()?;
+        Ok(Self {
+            inner,
+            path: path.clone(),
+            index,
+        })
     }
 
     /// Create a database in memory.\
@@ -78,16 +107,22 @@ where
     /// # Returns
     ///
     /// A new [Database].
-    pub fn new() -> Self {
-        let mut new = Self {
-            uuid: Uuid::now_v7(),
+    pub fn new(index_options: &LSHIndexOptions<N>) -> anyhow::Result<Self> {
+        let uuid = Uuid::now_v7();
+        let inner = DatabaseInner {
+            uuid,
             model: Mod::default(),
             metric: Met::default(),
-            index: LSHIndex::build_index(15),
+            index_options: index_options.clone(),
+        };
+        let index = inner.index()?;
+        let mut new = Self {
+            inner,
+            index,
             path: String::new(),
         };
         new.path = new.default_database_path();
-        new
+        Ok(new)
     }
 
     /// Create a database in memory, persisting to storage at the given path.
@@ -99,14 +134,23 @@ where
     /// # Returns
     ///
     /// A [Database] containing embeddings & documents.
-    pub fn new_with_path(path: &String) -> Self {
-        Self {
-            uuid: Uuid::now_v7(),
+    pub fn new_with_path(
+        path: &String,
+        index_options: &LSHIndexOptions<N>,
+    ) -> anyhow::Result<Self> {
+        let uuid = Uuid::now_v7();
+        let inner = DatabaseInner {
+            uuid,
             model: Mod::default(),
             metric: Met::default(),
-            index: LSHIndex::build_index(15),
+            index_options: index_options.clone(),
+        };
+        let index = inner.index()?;
+        Ok(Self {
+            inner,
+            index,
             path: path.to_owned(),
-        }
+        })
     }
 
     /// Load the database from disk, or create it if it does not already exist.
@@ -118,8 +162,11 @@ where
     /// # Returns
     ///
     /// A [Database] containing embeddings & documents.
-    pub fn open_or_create(path: &String) -> Self {
-        Self::open(path).unwrap_or(Self::new_with_path(path))
+    pub fn open_or_create(
+        path: &String,
+        index_options: &LSHIndexOptions<N>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self::open(path).unwrap_or(Self::new_with_path(path, index_options)?))
     }
 
     /// Save the database to disk.
@@ -128,7 +175,10 @@ where
     ///
     /// * `path` - An optional path to save the database to; if left blank, will use the path the database was opened from.
     pub fn save_database(&self, path: Option<&String>) -> anyhow::Result<()> {
-        fs::write(path.unwrap_or(&self.path), bincode::serialize(self)?)?;
+        fs::write(
+            path.unwrap_or(&self.path),
+            bincode::serde::encode_to_vec(&self.inner, bincode::config::legacy())?,
+        )?;
         Ok(())
     }
 
@@ -171,7 +221,7 @@ where
     ///
     /// * `documents` - A vector of documents to be inserted.
     pub fn insert_documents(&self, documents: &Vec<Bytes>) -> anyhow::Result<()> {
-        let new_embeddings: Vec<Embedding<N>> = self.model.embed_documents(documents)?;
+        let new_embeddings: Vec<Embedding<N>> = self.inner.model.embed_documents(documents)?;
         self.insert_records(&new_embeddings, documents)
     }
 
@@ -213,7 +263,7 @@ where
         if self.index.no_vectors() {
             return Ok(DashMap::new());
         }
-        let query_embeddings = self.model.embed_documents(documents)?;
+        let query_embeddings = self.inner.model.embed_documents(documents)?;
         self.query_vectors(&query_embeddings, number_of_results)
     }
 
@@ -240,7 +290,7 @@ where
         vectors.into_par_iter().enumerate().for_each(|(idx, x)| {
             let mut neighbours = self
                 .index
-                .search(x, number_of_results, &self.metric)
+                .search(x, number_of_results, &self.inner.metric)
                 .unwrap_or_default();
             neighbours.par_sort_unstable_by_key(|n| n.1);
             let neighbour_ids: DashSet<_> = neighbours.into_iter().map(|(id, _)| id).collect();

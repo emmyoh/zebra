@@ -59,40 +59,85 @@ struct InnerNode<const N: usize> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LeafNode(Vec<Uuid>);
 
+#[derive(Clone)]
+struct KeyValue {
+    _keyspace: fjall::Keyspace,
+    trees: PartitionHandle,
+    embeddings: PartitionHandle,
+}
+
+impl KeyValue {
+    fn new(uuid: &Uuid) -> anyhow::Result<Self> {
+        let keyspace = fjall::Config::new(format!("{}-keyspace", uuid.as_simple())).open()?;
+        let trees = keyspace.open_partition(
+            &format!("{}-trees", uuid.as_simple()),
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        )?;
+        let embeddings = keyspace.open_partition(
+            &format!("{}-embeddings", uuid.as_simple()),
+            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
+        )?;
+        Ok(Self {
+            _keyspace: keyspace,
+            trees,
+            embeddings,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Creation options for an [`LSHIndex`].
+pub struct LSHIndexOptions<const N: usize> {
+    /// The maximum number of vectors allowed on one side of a hyperplane; as the maximum node size decreases, the number of partitions in the database grows, increasing query accuracy ('recall') but decreasing performance.
+    pub max_node_size: usize,
+}
+
+impl<const N: usize> Default for LSHIndexOptions<N> {
+    fn default() -> Self {
+        Self { max_node_size: 15 }
+    }
+}
+
 /// An implementation of [the random projection method of locality sensitive hashing (LSH)](https://en.wikipedia.org/wiki/Locality-sensitive_hashing#Random_projection) as a data structure for use as a database index.
 ///
 /// This index stores vectors on disk, minimising memory usage.
 /// Memory-mapped file IO [is *not* used](https://db.cs.cmu.edu/mmap-cidr2022/).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct LSHIndex<const N: usize> {
-    uuid: Uuid,
     max_node_size: usize,
+    kv: KeyValue,
 }
 
 impl<const N: usize> LSHIndex<N> {
-    fn trees(&self) -> anyhow::Result<PartitionHandle> {
-        Ok(KEYSPACE.open_partition(
-            &format!("{}-trees", self.uuid.as_simple()),
-            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
-        )?)
-    }
-
-    fn embeddings(&self) -> anyhow::Result<PartitionHandle> {
-        Ok(KEYSPACE.open_partition(
-            &format!("{}-embeddings", self.uuid.as_simple()),
-            PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
-        )?)
+    /// Construct a new [LSHIndex].
+    ///
+    /// # Arguments
+    ///
+    /// * `uuid` - The UUID of the database.
+    ///
+    /// * `options` - The creation options for the index.
+    ///
+    /// # Returns
+    ///
+    /// An [LSHIndex].
+    pub fn new(uuid: &Uuid, options: &LSHIndexOptions<N>) -> anyhow::Result<Self> {
+        Ok(Self {
+            max_node_size: options.max_node_size,
+            kv: KeyValue::new(uuid)?,
+        })
     }
 
     fn vector(&self, embeddings: &PartitionHandle, idx: &Uuid) -> Embedding<N> {
-        bincode::deserialize(
+        bincode::serde::decode_from_slice(
             &embeddings
-                .get(bincode::serialize(idx).unwrap_or_default())
+                .get(idx.as_bytes())
                 .ok()
                 .flatten()
                 .unwrap_or(fjall::Slice::from(vec![])),
+            bincode::config::legacy(),
         )
         .unwrap_or_default()
+        .0
     }
 
     fn subtract(lhs: &Embedding<N>, rhs: &Embedding<N>) -> Embedding<N> {
@@ -117,12 +162,12 @@ impl<const N: usize> LSHIndex<N> {
         &self,
         indexes: &Vec<Uuid>,
     ) -> anyhow::Result<(Hyperplane<N>, Vec<Uuid>, Vec<Uuid>)> {
-        let embeddings = self.embeddings()?;
-
         // Pick two random vectors
-        let samples: Vec<_> = embeddings
+        let samples: Vec<_> = self
+            .kv
+            .embeddings
             .iter()
-            .choose_multiple(&mut rand::thread_rng(), 2);
+            .choose_multiple(&mut rand::rng(), 2);
 
         let empty_slice = fjall::Slice::from(vec![]);
         let a = samples
@@ -134,8 +179,12 @@ impl<const N: usize> LSHIndex<N> {
             .and_then(|x| x.as_ref().map(|y| &y.1).ok())
             .unwrap_or(&empty_slice);
         let (a, b) = (
-            bincode::deserialize(a).unwrap_or_default(),
-            bincode::deserialize(b).unwrap_or_default(),
+            bincode::serde::decode_from_slice(a, bincode::config::legacy())
+                .unwrap_or_default()
+                .0,
+            bincode::serde::decode_from_slice(b, bincode::config::legacy())
+                .unwrap_or_default()
+                .0,
         );
 
         // Use the two random points to make a hyperplane orthogonal to a line connecting the two points
@@ -154,7 +203,7 @@ impl<const N: usize> LSHIndex<N> {
         let below: DashSet<Uuid> = DashSet::new();
 
         indexes.into_par_iter().for_each(|id| {
-            match hyperplane.point_is_above(&self.vector(&embeddings, id)) {
+            match hyperplane.point_is_above(&self.vector(&self.kv.embeddings, id)) {
                 true => above.insert(*id),
                 false => below.insert(*id),
             };
@@ -190,11 +239,11 @@ impl<const N: usize> LSHIndex<N> {
     pub fn deduplicate(&self) -> anyhow::Result<DashSet<Uuid>> {
         let seen: DashSet<Vec<_>> = DashSet::new();
         let mut to_remove = Vec::new();
-        let embeddings = self.embeddings()?;
-        for kv in embeddings.iter() {
+        for kv in self.kv.embeddings.iter() {
             let (k, v) = kv?;
-            let id = bincode::deserialize::<Uuid>(&k)?;
-            let embedding: Embedding<N> = bincode::deserialize(&v)?;
+            let id = Uuid::from_slice(&k)?;
+            let embedding: Embedding<N> =
+                bincode::serde::decode_from_slice(&v, bincode::config::legacy())?.0;
             // The embedding itself cannot be hashed, so we look at its bits
             let embedding_bits: Vec<_> = embedding.iter().map(|x| x.to_bits()).collect();
             match seen.contains(&embedding_bits) {
@@ -205,22 +254,6 @@ impl<const N: usize> LSHIndex<N> {
             }
         }
         self.remove(&to_remove)
-    }
-
-    /// Construct a new [LSHIndex].
-    ///
-    /// # Arguments
-    ///
-    /// * `max_node_size` - The maximum number of vectors allowed on one side of a hyperplane; as the maximum node size decreases, the number of partitions in the database grows, increasing query accuracy ('recall') but decreasing performance.
-    ///
-    /// # Returns
-    ///
-    /// An [LSHIndex].
-    pub fn build_index(max_node_size: usize) -> Self {
-        Self {
-            uuid: Uuid::now_v7(),
-            max_node_size,
-        }
     }
 
     fn tree_result<Met: Metric<Embedding<N>, Unit = DistanceUnit> + Send + Sync>(
@@ -243,11 +276,11 @@ impl<const N: usize> LSHIndex<N> {
                         Ok(leaf_values_index.len() as i32)
                     }
                     false => {
-                        let embeddings = self.embeddings()?;
                         let mut sorted_candidates = leaf_values_index
                             .into_par_iter()
                             .map(|idx| {
-                                let curr_vector: Embedding<N> = self.vector(&embeddings, idx);
+                                let curr_vector: Embedding<N> =
+                                    self.vector(&self.kv.embeddings, idx);
                                 (idx, metric.distance(&curr_vector, query))
                             })
                             .collect::<Vec<_>>();
@@ -333,10 +366,7 @@ impl<const N: usize> LSHIndex<N> {
     ///
     /// If there are no vectors in the index.
     pub fn no_vectors(&self) -> bool {
-        self.embeddings()
-            .ok()
-            .and_then(|x| x.is_empty().ok())
-            .unwrap_or(true)
+        self.kv.embeddings.is_empty().unwrap_or(true)
     }
 
     /// Whether or not there are no trees in the index.
@@ -345,10 +375,7 @@ impl<const N: usize> LSHIndex<N> {
     ///
     /// If there are no hyperplanes partitioning the vectors in the index.
     pub fn no_trees(&self) -> bool {
-        self.trees()
-            .ok()
-            .and_then(|x| x.is_empty().ok())
-            .unwrap_or(true)
+        self.kv.trees.is_empty().unwrap_or(true)
     }
 
     /// Adds vectors to the index.
@@ -361,21 +388,25 @@ impl<const N: usize> LSHIndex<N> {
     ///
     /// A list of the IDs for the added embedding vectors.
     pub fn add(&self, embeddings: &Vec<Embedding<N>>) -> anyhow::Result<Vec<Uuid>> {
-        let trees = self.trees()?;
-        let vectors = self.embeddings()?;
-
         let vector_ids = embeddings
             .par_iter()
             .map(|embedding| -> anyhow::Result<Uuid> {
                 let vec_id = Uuid::now_v7();
-                vectors.insert(bincode::serialize(&vec_id)?, bincode::serialize(embedding)?)?;
+                self.kv.embeddings.insert(
+                    vec_id.as_bytes(),
+                    bincode::serde::encode_to_vec(embedding, bincode::config::legacy())?,
+                )?;
 
-                for kv in trees.iter() {
+                for kv in self.kv.trees.iter() {
                     let (k, v) = kv?;
-                    let id = bincode::deserialize::<Uuid>(&k)?;
-                    let mut tree: Node<N> = bincode::deserialize(&v)?;
+                    let id = Uuid::from_slice(&k)?;
+                    let mut tree: Node<N> =
+                        bincode::serde::decode_from_slice(&v, bincode::config::legacy())?.0;
                     self.insert(&mut tree, embedding, vec_id)?;
-                    trees.insert(bincode::serialize(&id)?, bincode::serialize(&tree)?)?;
+                    self.kv.trees.insert(
+                        id.as_bytes(),
+                        bincode::serde::encode_to_vec(&tree, bincode::config::legacy())?,
+                    )?;
                 }
 
                 Ok(vec_id)
@@ -392,27 +423,32 @@ impl<const N: usize> LSHIndex<N> {
     ///
     /// * `embedding_ids` - The IDs of the vectors to remove.
     pub fn remove(&self, embedding_ids: &Vec<Uuid>) -> anyhow::Result<DashSet<Uuid>> {
-        let embeddings = self.embeddings()?;
-        let trees = self.trees()?;
         let removed = DashSet::new();
 
         embedding_ids
             .par_iter()
             .map(|x| -> anyhow::Result<()> {
-                trees.iter().try_for_each(|kv| -> anyhow::Result<()> {
-                    let (k, v) = kv?;
-                    let id = bincode::deserialize::<Uuid>(&k)?;
-                    let mut tree: Node<N> = bincode::deserialize(&v)?;
-                    if let Node::Leaf(leaf) = tree {
-                        let leaf_nodes: Vec<Uuid> =
-                            (*leaf).0.into_par_iter().filter(|y| y != x).collect();
-                        tree = Node::Leaf(Box::new(LeafNode(leaf_nodes)));
-                        trees.insert(bincode::serialize(&id)?, bincode::serialize(&tree)?)?;
-                    }
-                    Ok(())
-                })?;
-                embeddings.remove(bincode::serialize(x)?)?;
-                removed.insert(x.clone());
+                self.kv
+                    .trees
+                    .iter()
+                    .try_for_each(|kv| -> anyhow::Result<()> {
+                        let (k, v) = kv?;
+                        let id = Uuid::from_slice(&k)?;
+                        let mut tree: Node<N> =
+                            bincode::serde::decode_from_slice(&v, bincode::config::legacy())?.0;
+                        if let Node::Leaf(leaf) = tree {
+                            let leaf_nodes: Vec<Uuid> =
+                                (*leaf).0.into_par_iter().filter(|y| y != x).collect();
+                            tree = Node::Leaf(Box::new(LeafNode(leaf_nodes)));
+                            self.kv.trees.insert(
+                                id.as_bytes(),
+                                bincode::serde::encode_to_vec(&tree, bincode::config::legacy())?,
+                            )?;
+                        }
+                        Ok(())
+                    })?;
+                self.kv.embeddings.remove(x.as_bytes())?;
+                removed.insert(*x);
                 Ok(())
             })
             .collect::<anyhow::Result<()>>()?;
@@ -423,23 +459,22 @@ impl<const N: usize> LSHIndex<N> {
 
     /// Delete the contents of the index.
     pub fn clear(&self) -> anyhow::Result<()> {
-        let embeddings = self.embeddings()?;
-        let trees = self.trees()?;
-
-        embeddings
+        self.kv
+            .embeddings
             .iter()
             .map(|kv| -> anyhow::Result<()> {
                 let (k, _) = kv?;
-                embeddings.remove(k)?;
+                self.kv.embeddings.remove(k)?;
                 Ok(())
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        trees
+        self.kv
+            .trees
             .iter()
             .map(|kv| -> anyhow::Result<()> {
                 let (k, _) = kv?;
-                embeddings.remove(k)?;
+                self.kv.embeddings.remove(k)?;
                 Ok(())
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -468,18 +503,21 @@ impl<const N: usize> LSHIndex<N> {
         metric: &Met,
     ) -> anyhow::Result<Vec<(Uuid, DistanceUnit)>> {
         let candidates = DashSet::new();
-        let trees = self.trees()?;
 
-        for kv in trees.iter() {
+        for kv in self.kv.trees.iter() {
             let (_, v) = kv?;
-            let tree: Node<N> = bincode::deserialize(&v)?;
+            let tree: Node<N> = bincode::serde::decode_from_slice(&v, bincode::config::legacy())?.0;
             self.tree_result(query, top_k as i32, &tree, &candidates, metric)?;
         }
 
-        let embeddings = self.embeddings()?;
         let mut sorted_candidates = candidates
             .into_par_iter()
-            .map(|idx| (idx, metric.distance(&self.vector(&embeddings, &idx), query)))
+            .map(|idx| {
+                (
+                    idx,
+                    metric.distance(&self.vector(&self.kv.embeddings, &idx), query),
+                )
+            })
             .collect::<Vec<_>>();
         sorted_candidates.par_sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         Ok(sorted_candidates.into_iter().take(top_k).collect())

@@ -144,17 +144,18 @@ fn main() -> anyhow::Result<()> {
         Commands::Text(text) => match text.text_commands {
             TextCommands::Insert { texts } => {
                 let mut sw = Stopwatch::start_new();
-                let db = DefaultTextDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultTextDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 writeln!(buffer, "Inserting {} text(s).", texts.len())?;
-                let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
+                let texts_bytes: Vec<_> = texts.into_par_iter().map(Bytes::from).collect();
                 db.insert_documents(&texts_bytes)?;
                 sw.stop();
                 writeln!(
                     buffer,
                     "{} embeddings of {} dimensions inserted into the database in {}.",
-                    HumanCount(texts_bytes.len() as u64).to_string(),
-                    HumanCount(DIM_BGESMALL_EN_1_5 as u64).to_string(),
+                    HumanCount(texts_bytes.len() as u64),
+                    HumanCount(DIM_BGESMALL_EN_1_5 as u64),
                     pretty_duration(&sw.elapsed(), None)
                 )?;
             }
@@ -162,7 +163,8 @@ fn main() -> anyhow::Result<()> {
                 file_paths,
                 batch_size,
             } => {
-                let db = DefaultTextDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultTextDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 insert_from_files(&db, file_paths, batch_size)?;
             }
             TextCommands::Query {
@@ -170,11 +172,12 @@ fn main() -> anyhow::Result<()> {
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let db = DefaultTextDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultTextDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let num_texts = texts.len();
                 writeln!(buffer, "Querying {} text(s).", num_texts)?;
-                let texts_bytes: Vec<_> = texts.into_par_iter().map(|x| Bytes::from(x)).collect();
+                let texts_bytes: Vec<_> = texts.into_par_iter().map(Bytes::from).collect();
                 let query_results = db.query_documents(&texts_bytes, number_of_results)?;
                 sw.stop();
                 writeln!(
@@ -190,7 +193,8 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             TextCommands::Clear => {
-                DefaultTextDatabase::open_or_create(&cli.database_path).clear_database();
+                DefaultTextDatabase::open_or_create(&cli.database_path, &Default::default())?
+                    .clear_database();
             }
         },
         Commands::Image(image) => match image.image_commands {
@@ -198,7 +202,8 @@ fn main() -> anyhow::Result<()> {
                 file_paths,
                 batch_size,
             } => {
-                let db = DefaultImageDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultImageDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 insert_from_files(&db, file_paths, batch_size)?;
             }
             ImageCommands::Query {
@@ -206,7 +211,8 @@ fn main() -> anyhow::Result<()> {
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let db = DefaultImageDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultImageDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 let image_print_config = viuer::Config {
                     transparent: true,
@@ -225,7 +231,7 @@ fn main() -> anyhow::Result<()> {
                 };
                 writeln!(buffer, "Querying image.")?;
                 let image_bytes = std::fs::read(image_path).unwrap_or_default().into();
-                let query_results = db.query_documents(&vec![image_bytes], number_of_results)?;
+                let query_results = db.query_documents(&[image_bytes], number_of_results)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -242,7 +248,8 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             ImageCommands::Clear => {
-                DefaultImageDatabase::open_or_create(&cli.database_path).clear_database();
+                DefaultImageDatabase::open_or_create(&cli.database_path, &Default::default())?
+                    .clear_database();
             }
         },
         Commands::Audio(audio) => match audio.audio_commands {
@@ -250,7 +257,8 @@ fn main() -> anyhow::Result<()> {
                 file_paths,
                 batch_size,
             } => {
-                let db = DefaultAudioDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultAudioDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 insert_from_files(&db, file_paths, batch_size)?;
             }
             AudioCommands::Query {
@@ -258,13 +266,14 @@ fn main() -> anyhow::Result<()> {
                 number_of_results,
             } => {
                 let mut sw = Stopwatch::start_new();
-                let db = DefaultAudioDatabase::open_or_create(&cli.database_path);
+                let db =
+                    DefaultAudioDatabase::open_or_create(&cli.database_path, &Default::default())?;
                 let (_stream, stream_handle) = OutputStream::try_default()?;
                 let sink = Sink::try_new(&stream_handle)?;
                 let mut buffer = BufWriter::new(stdout().lock());
                 writeln!(buffer, "Querying sound.")?;
                 let audio_bytes = std::fs::read(audio_path).unwrap_or_default().into();
-                let query_results = db.query_documents(&vec![audio_bytes], number_of_results)?;
+                let query_results = db.query_documents(&[audio_bytes], number_of_results)?;
                 sw.stop();
                 writeln!(
                     buffer,
@@ -284,7 +293,8 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             AudioCommands::Clear => {
-                DefaultAudioDatabase::open_or_create(&cli.database_path).clear_database();
+                DefaultAudioDatabase::open_or_create(&cli.database_path, &Default::default())?
+                    .clear_database();
             }
         },
     }
@@ -295,24 +305,25 @@ fn progress_bar_style() -> anyhow::Result<ProgressStyle> {
     Ok(ProgressStyle::with_template("[{elapsed} elapsed, {eta} remaining ({duration} total)] {wide_bar:.cyan/blue} {human_pos} of {human_len} ({percent}%) {msg}")?)
 }
 
-fn insert_from_files<
-    const N: usize,
-    Met: Metric<Embedding<N>, Unit = DistanceUnit> + Default + Serialize + Send + Sync,
-    Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync,
->(
+fn insert_from_files<const N: usize, Met, Mod>(
     db: &Database<N, Met, Mod>,
     file_paths: Vec<PathBuf>,
     batch_size: usize,
 ) -> anyhow::Result<()>
 where
-    for<'de> Met: Deserialize<'de>,
-    for<'de> Mod: Deserialize<'de>,
+    for<'de> Met: Metric<Embedding<N>, Unit = DistanceUnit>
+        + Default
+        + Serialize
+        + Send
+        + Sync
+        + Deserialize<'de>,
+    for<'de> Mod: DatabaseEmbeddingModel<N> + Default + Serialize + Send + Sync + Deserialize<'de>,
 {
     let mut sw = Stopwatch::start_new();
     let num_documents = file_paths.len();
     println!(
         "Inserting documents from {} file(s).",
-        HumanCount(num_documents as u64).to_string()
+        HumanCount(num_documents as u64)
     );
     let progress_bar =
         ProgressBar::with_draw_target(Some(num_documents as u64), ProgressDrawTarget::hidden());
@@ -330,8 +341,8 @@ where
             batch_sw.stop();
             progress_bar.println(format!(
                 "{} embeddings of {} dimensions inserted into the database in {}.",
-                HumanCount(document_batch.len() as u64).to_string(),
-                HumanCount(N as u64).to_string(),
+                HumanCount(document_batch.len() as u64),
+                HumanCount(N as u64),
                 pretty_duration(&batch_sw.elapsed(), None)
             ));
             progress_bar.inc(batch_size as u64);
