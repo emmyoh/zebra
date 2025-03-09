@@ -122,6 +122,7 @@ where
             path: String::new(),
         };
         new.path = new.default_database_path();
+        new.save_database(None)?;
         Ok(new)
     }
 
@@ -146,11 +147,13 @@ where
             index_options: index_options.clone(),
         };
         let index = inner.index()?;
-        Ok(Self {
+        let new = Self {
             inner,
             index,
             path: path.to_owned(),
-        })
+        };
+        new.save_database(None)?;
+        Ok(new)
     }
 
     /// Load the database from disk, or create it if it does not already exist.
@@ -166,7 +169,10 @@ where
         path: &String,
         index_options: &LSHIndexOptions<N>,
     ) -> anyhow::Result<Self> {
-        Ok(Self::open(path).unwrap_or(Self::new_with_path(path, index_options)?))
+        match Self::open(path) {
+            Ok(db) => Ok(db),
+            Err(_) => Ok(Self::new_with_path(path, index_options)?),
+        }
     }
 
     /// Save the database to disk.
@@ -179,6 +185,7 @@ where
             path.unwrap_or(&self.path),
             bincode::serde::encode_to_vec(&self.inner, bincode::config::legacy())?,
         )?;
+        self.index.save()?;
         Ok(())
     }
 
@@ -201,6 +208,7 @@ where
         removed.into_par_iter().for_each(|x| {
             let _ = std::fs::remove_file(format!("{}/{}.lz4", document_subdirectory, x));
         });
+        self.save_database(None)?;
         Ok(())
     }
 
@@ -211,6 +219,7 @@ where
         removed.into_par_iter().for_each(|x| {
             let _ = std::fs::remove_file(format!("{}/{}.lz4", document_subdirectory, x));
         });
+        self.save_database(None)?;
         Ok(())
     }
 
@@ -355,11 +364,9 @@ where
         documents
             .into_par_iter()
             .map(|document_index| -> anyhow::Result<()> {
-                let file = OpenOptions::new().read(true).open(format!(
-                    "{}/{}.lz4",
-                    document_subdirectory,
-                    document_index.as_simple()
-                ))?;
+                let file = OpenOptions::new()
+                    .read(true)
+                    .open(format!("{}/{}.lz4", document_subdirectory, *document_index))?;
                 let buf = BufReader::new(file);
                 let mut decompressor = lz4_flex::frame::FrameDecoder::new(buf);
                 let mut writer = BufWriter::new(Vec::new());

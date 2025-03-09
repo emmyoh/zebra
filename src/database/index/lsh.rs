@@ -60,13 +60,13 @@ struct InnerNode<const N: usize> {
 struct LeafNode(Vec<Uuid>);
 
 #[derive(Clone)]
-struct KeyValue {
-    _keyspace: fjall::Keyspace,
+struct KeyValue<const N: usize> {
+    keyspace: fjall::Keyspace,
     trees: PartitionHandle,
     embeddings: PartitionHandle,
 }
 
-impl KeyValue {
+impl<const N: usize> KeyValue<N> {
     fn new(uuid: &Uuid) -> anyhow::Result<Self> {
         let keyspace = fjall::Config::new(format!("{}-keyspace", uuid.as_simple())).open()?;
         let trees = keyspace.open_partition(
@@ -78,10 +78,44 @@ impl KeyValue {
             PartitionCreateOptions::default().with_kv_separation(KvSeparationOptions::default()),
         )?;
         Ok(Self {
-            _keyspace: keyspace,
+            keyspace,
             trees,
             embeddings,
         })
+    }
+
+    fn save(&self) -> anyhow::Result<()> {
+        Ok(self.keyspace.persist(PersistMode::SyncAll)?)
+    }
+
+    fn upsert_embedding(&self, vec_id: &Uuid, embedding: &Embedding<N>) -> anyhow::Result<()> {
+        self.embeddings.insert(
+            vec_id.as_bytes(),
+            bincode::serde::encode_to_vec(embedding, bincode::config::legacy())?,
+        )?;
+        self.save()
+    }
+
+    fn upsert_tree(&self, id: &Uuid, tree: &Node<N>) -> anyhow::Result<()> {
+        self.trees.insert(
+            id.as_bytes(),
+            bincode::serde::encode_to_vec(tree, bincode::config::legacy())?,
+        )?;
+        self.save()
+    }
+
+    fn embedding(&self, idx: &Uuid) -> Embedding<N> {
+        bincode::serde::decode_from_slice(
+            &self
+                .embeddings
+                .get(idx.as_bytes())
+                .ok()
+                .flatten()
+                .unwrap_or(fjall::Slice::from(vec![])),
+            bincode::config::legacy(),
+        )
+        .unwrap_or_default()
+        .0
     }
 }
 
@@ -90,11 +124,16 @@ impl KeyValue {
 pub struct LSHIndexOptions<const N: usize> {
     /// The maximum number of vectors allowed on one side of a hyperplane; as the maximum node size decreases, the number of partitions in the database grows, increasing query accuracy ('recall') but decreasing performance.
     pub max_node_size: usize,
+    /// The number of trees (ie, the number of root nodes) in the index.
+    pub num_trees: usize,
 }
 
 impl<const N: usize> Default for LSHIndexOptions<N> {
     fn default() -> Self {
-        Self { max_node_size: 15 }
+        Self {
+            max_node_size: 5,
+            num_trees: 15,
+        }
     }
 }
 
@@ -104,8 +143,8 @@ impl<const N: usize> Default for LSHIndexOptions<N> {
 /// Memory-mapped file IO [is *not* used](https://db.cs.cmu.edu/mmap-cidr2022/).
 #[derive(Clone)]
 pub struct LSHIndex<const N: usize> {
-    max_node_size: usize,
-    kv: KeyValue,
+    options: LSHIndexOptions<N>,
+    kv: KeyValue<N>,
 }
 
 impl<const N: usize> LSHIndex<N> {
@@ -122,22 +161,14 @@ impl<const N: usize> LSHIndex<N> {
     /// An [LSHIndex].
     pub fn new(uuid: &Uuid, options: &LSHIndexOptions<N>) -> anyhow::Result<Self> {
         Ok(Self {
-            max_node_size: options.max_node_size,
+            options: options.clone(),
             kv: KeyValue::new(uuid)?,
         })
     }
 
-    fn vector(&self, embeddings: &PartitionHandle, idx: &Uuid) -> Embedding<N> {
-        bincode::serde::decode_from_slice(
-            &embeddings
-                .get(idx.as_bytes())
-                .ok()
-                .flatten()
-                .unwrap_or(fjall::Slice::from(vec![])),
-            bincode::config::legacy(),
-        )
-        .unwrap_or_default()
-        .0
+    /// Persist the index to storage.
+    pub fn save(&self) -> anyhow::Result<()> {
+        self.kv.save()
     }
 
     fn subtract(lhs: &Embedding<N>, rhs: &Embedding<N>) -> Embedding<N> {
@@ -203,7 +234,7 @@ impl<const N: usize> LSHIndex<N> {
         let below: DashSet<Uuid> = DashSet::new();
 
         indexes.into_par_iter().for_each(|id| {
-            match hyperplane.point_is_above(&self.vector(&self.kv.embeddings, id)) {
+            match hyperplane.point_is_above(&self.kv.embedding(id)) {
                 true => above.insert(*id),
                 false => below.insert(*id),
             };
@@ -217,7 +248,7 @@ impl<const N: usize> LSHIndex<N> {
     }
 
     fn build_a_tree(&self, indexes: &Vec<Uuid>) -> anyhow::Result<Node<N>> {
-        match indexes.len() < self.max_node_size {
+        match indexes.len() < self.options.max_node_size {
             true => Ok(Node::Leaf(Box::new(LeafNode(indexes.clone())))),
             false => {
                 // If there are too many indices to fit into a leaf node, recursively build trees to spread the indices across leaf nodes.
@@ -279,8 +310,7 @@ impl<const N: usize> LSHIndex<N> {
                         let mut sorted_candidates = leaf_values_index
                             .into_par_iter()
                             .map(|idx| {
-                                let curr_vector: Embedding<N> =
-                                    self.vector(&self.kv.embeddings, idx);
+                                let curr_vector: Embedding<N> = self.kv.embedding(idx);
                                 (idx, metric.distance(&curr_vector, query))
                             })
                             .collect::<Vec<_>>();
@@ -335,7 +365,7 @@ impl<const N: usize> LSHIndex<N> {
                 self.insert(next_node, embedding, vec_id)?;
             }
             Node::Leaf(leaf_node) => {
-                match leaf_node.0.len() + 1 > self.max_node_size {
+                match leaf_node.0.len() + 1 > self.options.max_node_size {
                     false => leaf_node.0.push(vec_id),
                     true => {
                         // If adding the vector ID to this leaf node would cause it to be too large, split this node.
@@ -378,6 +408,26 @@ impl<const N: usize> LSHIndex<N> {
         self.kv.trees.is_empty().unwrap_or(true)
     }
 
+    fn build_index(&self, embeddings: &Vec<Embedding<N>>) -> anyhow::Result<Vec<Uuid>> {
+        let vector_ids = embeddings
+            .par_iter()
+            .map(|embedding| {
+                let vec_id = Uuid::now_v7();
+                self.kv.upsert_embedding(&vec_id, embedding)?;
+                Ok(vec_id)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        (0..self.options.num_trees)
+            .into_par_iter()
+            .map(|_| {
+                let id = Uuid::now_v7();
+                let tree = self.build_a_tree(&vector_ids)?;
+                self.kv.upsert_tree(&id, &tree)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(vector_ids)
+    }
+
     /// Adds vectors to the index.
     ///
     /// # Arguments
@@ -388,14 +438,15 @@ impl<const N: usize> LSHIndex<N> {
     ///
     /// A list of the IDs for the added embedding vectors.
     pub fn add(&self, embeddings: &Vec<Embedding<N>>) -> anyhow::Result<Vec<Uuid>> {
+        if self.no_trees() {
+            return self.build_index(embeddings);
+        }
+
         let vector_ids = embeddings
             .par_iter()
             .map(|embedding| -> anyhow::Result<Uuid> {
                 let vec_id = Uuid::now_v7();
-                self.kv.embeddings.insert(
-                    vec_id.as_bytes(),
-                    bincode::serde::encode_to_vec(embedding, bincode::config::legacy())?,
-                )?;
+                self.kv.upsert_embedding(&vec_id, embedding)?;
 
                 for kv in self.kv.trees.iter() {
                     let (k, v) = kv?;
@@ -403,10 +454,7 @@ impl<const N: usize> LSHIndex<N> {
                     let mut tree: Node<N> =
                         bincode::serde::decode_from_slice(&v, bincode::config::legacy())?.0;
                     self.insert(&mut tree, embedding, vec_id)?;
-                    self.kv.trees.insert(
-                        id.as_bytes(),
-                        bincode::serde::encode_to_vec(&tree, bincode::config::legacy())?,
-                    )?;
+                    self.kv.upsert_tree(&id, &tree)?;
                 }
 
                 Ok(vec_id)
@@ -440,10 +488,7 @@ impl<const N: usize> LSHIndex<N> {
                             let leaf_nodes: Vec<Uuid> =
                                 (*leaf).0.into_par_iter().filter(|y| y != x).collect();
                             tree = Node::Leaf(Box::new(LeafNode(leaf_nodes)));
-                            self.kv.trees.insert(
-                                id.as_bytes(),
-                                bincode::serde::encode_to_vec(&tree, bincode::config::legacy())?,
-                            )?;
+                            self.kv.upsert_tree(&id, &tree)?;
                         }
                         Ok(())
                     })?;
@@ -509,17 +554,13 @@ impl<const N: usize> LSHIndex<N> {
             let tree: Node<N> = bincode::serde::decode_from_slice(&v, bincode::config::legacy())?.0;
             self.tree_result(query, top_k as i32, &tree, &candidates, metric)?;
         }
-
         let mut sorted_candidates = candidates
             .into_par_iter()
-            .map(|idx| {
-                (
-                    idx,
-                    metric.distance(&self.vector(&self.kv.embeddings, &idx), query),
-                )
-            })
+            .map(|idx| (idx, metric.distance(&self.kv.embedding(&idx), query)))
             .collect::<Vec<_>>();
-        sorted_candidates.par_sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        sorted_candidates.par_sort_unstable_by(|a, b| {
+            a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(sorted_candidates.into_iter().take(top_k).collect())
     }
 }
